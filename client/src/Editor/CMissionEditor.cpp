@@ -298,8 +298,12 @@ void LookAt(const CVector& target)
 {
     if (!ms_bFreeCam)
         SetFreeCam(true);
-    const CVector front = CamFront();
-    ms_vCamPos = target - front * 12.0f + CVector(0.0f, 0.0f, 3.0f);
+    // keep the heading, stand 12 m back and 6 m up, and aim at the point
+    const CVector back(sinf(ms_fCamYaw), -cosf(ms_fCamYaw), 0.0f);
+    ms_vCamPos = target + back * 12.0f + CVector(0.0f, 0.0f, 6.0f);
+    const CVector dir = target - ms_vCamPos;
+    ms_fCamYaw = atan2f(-dir.x, dir.y);
+    ms_fCamPitch = atan2f(dir.z, sqrtf(dir.x * dir.x + dir.y * dir.y));
 }
 
 bool KeyDown(int key)
