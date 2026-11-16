@@ -119,6 +119,12 @@ try {
     Falla "No se pudo copiar un archivo; se volvio a la version anterior. $($_.Exception.Message)"
 }
 
+# coop rules as data (CMissionRulesData); optional: older packages do not have it
+$reglas = Join-Path $archivos 'reglas_misiones.txt'
+if (Test-Path -LiteralPath $reglas) {
+    Copy-Item -LiteralPath $reglas -Destination (Join-Path (Join-Path $gta 'CoopAndreas') 'reglas_misiones.txt') -Force
+}
+
 # the loader (proxy eax.dll, starts the mod only with --coop): the game's own eax.dll becomes eax_orig.dll the first time
 $proxy = Join-Path $archivos 'eax.dll'
 if (Test-Path -LiteralPath $proxy) {

@@ -1,0 +1,4 @@
+# Reglas coop por mision (CMissionRulesData, interruptor mission-rules-data). Una por linea, mismo formato que las
+# marcas del editor (F5): tipo=<accion> script=<mision> offset=<n> pos=x,y,z rumbo=<grados> modelo=<id> [radio=<m>]
+# [arma=<id> balas=<n>] nota=...  Acciones: auto_invitado invitado_baja invitado_sube dar_arma esperar_a_todos.
+# Detalle: tareas/TANDA_2026-11-16_claude_reglas_datos.md

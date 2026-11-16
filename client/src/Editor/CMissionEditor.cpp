@@ -4,6 +4,7 @@
 #include "Debug/CImGui.h"
 #include "CConfigLoader.h"
 #include "CTestMode.h"
+#include "CMissionRulesData.h"
 #include <CTimer.h>
 #include <CMissionCleanup.h>
 #include <fstream>
@@ -427,6 +428,41 @@ void StopRecording(bool keep)
     ms_recording.clear();
 }
 
+// the marks of this mission replace its lines in reglas_prueba.txt (read by CMissionRulesData with mission-editor on)
+void UseMarksAsTestRules()
+{
+    if (ms_sFileScript.empty() || ms_sFileScript == "ninguno")
+    {
+        ms_sStatus = "No hay mision andando: las reglas son por mision";
+        return;
+    }
+    SaveMarks();
+    std::vector<std::string> lines;
+    {
+        std::ifstream in(CMissionRulesData::TestFilePath());
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (line.find(" script=" + ms_sFileScript + " ") == std::string::npos)
+                lines.push_back(line);
+        }
+    }
+    {
+        std::ifstream in(FilePath(ms_sFileScript));
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (!line.empty() && line[0] != '#')
+                lines.push_back(line);
+        }
+    }
+    std::ofstream out(CMissionRulesData::TestFilePath(), std::ios::trunc);
+    for (const std::string& line : lines)
+        out << line << "\n";
+    CMissionRulesData::Reload();
+    ms_sStatus = "Marcas activas como reglas en esta PC (reglas_prueba.txt). Reintenta la mision para verlas.";
+}
+
 void WriteSnapshot()
 {
     CRunningScript* mission = FindMission();
@@ -731,6 +767,8 @@ void CMissionEditor::Draw()
         }
         if (ms_marks.empty())
             ImGui::TextDisabled("Todavia no hay marcas.");
+        else if (ImGui::Button("Probar estas marcas como reglas (solo en esta PC)"))
+            UseMarksAsTestRules();
     }
 
     if (ImGui::CollapsingHeader("Lo que creo la mision"))

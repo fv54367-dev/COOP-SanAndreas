@@ -151,6 +151,7 @@ void CConfigLoader::Load()
     ms_bFadeGuard = readBool("fade-guard");
     ms_bSkipDeathArrestHelp = readBool("skip-death-arrest-help", "false");
     ms_bMissionEditor = readBool("mission-editor", "false");
+    ms_bMissionRulesData = readBool("mission-rules-data");
     ms_bPoolTwoPlayers = readBool("pool-two-players");
     ms_bActivityChallenge = readBool("activity-challenge");
     ms_bEmotes = readBool("emotes");
