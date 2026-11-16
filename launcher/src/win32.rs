@@ -213,6 +213,8 @@ pub const EN_CHANGE: u32 = 0x0300;
 pub const IDOK: usize = 1;
 pub const MB_ICONINFORMATION: u32 = 0x40;
 pub const DT_END_ELLIPSIS: u32 = 0x8000;
+pub const SW_HIDE: i32 = 0;
+pub const CSIDL_PERSONAL: i32 = 5;
 pub const PS_GEOMETRIC: DWORD = 0x0001_0000;
 pub const BS_SOLID: UINT = 0;
 
@@ -286,6 +288,11 @@ extern "system" {
     pub fn SetWindowTextW(hWnd: HWND, lpString: *const u16) -> BOOL;
     pub fn SetFocus(hWnd: HWND) -> HWND;
     pub fn IsDialogMessageW(hDlg: HWND, lpMsg: *mut MSG) -> BOOL;
+}
+
+#[link(name = "shell32")]
+extern "system" {
+    pub fn SHGetFolderPathW(hwnd: HWND, csidl: i32, hToken: HANDLE, dwFlags: DWORD, pszPath: *mut u16) -> i32;
 }
 
 #[link(name = "dwmapi")]

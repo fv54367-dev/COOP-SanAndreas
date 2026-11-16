@@ -2,11 +2,14 @@
 // No account, no serial: the player types a name and the server (IP, IP:port or connection code), the launcher asks
 // that server whether it is open and runs the same version (server.rs), checks the mods, starts
 // gta_sa.exe --coop -connect <server> -nick <name> from its own folder and exits (no resident process).
-// "ABRIR SERVIDOR" opens SERVIDOR\server.exe for the host; the small top-right button is the update check (update.rs).
+// After the checks JUGAR shows the saves screen (saves.rs, like the game's own): NUEVA PARTIDA or a slot starts the game
+// straight into it (-autoload), the cross deletes a slot. "ABRIR SERVIDOR" opens SERVIDOR\server.exe for the host; the
+// small top-right button is the update check (update.rs).
 #![windows_subsystem = "windows"]
 
 mod launch;
 mod mods;
+mod saves;
 mod server;
 mod update;
 mod win32;
@@ -54,6 +57,11 @@ const PART_NONE: u8 = 0;
 const PART_PLAY: u8 = 1;
 const PART_SERVER: u8 = 2;
 const PART_UPDATE: u8 = 3;
+// the saves screen (after JUGAR): new game, back, a row per slot and its delete cross
+const PART_NEW: u8 = 4;
+const PART_BACK: u8 = 5;
+const PART_SLOT: u8 = 10; // + slot (0..7)
+const PART_DELETE: u8 = 20; // + slot (0..7)
 
 // the last answer of the status thread: (number of the query, what it found)
 static STATUS: Mutex<(u32, Option<server::Info>)> = Mutex::new((0, None));
@@ -84,6 +92,10 @@ struct App {
     querying: bool,
     dirty: bool,
     last_query: u32,
+    // the saves screen: shown once JUGAR passed its checks; `pending` = the server and name it checked
+    saves_view: bool,
+    slots: Vec<Option<saves::Slot>>,
+    pending: Option<(String, String)>,
 }
 
 unsafe fn make_font(pt: i32, dpi: i32, bold: bool) -> HFONT {
@@ -146,6 +158,9 @@ impl App {
             querying: false,
             dirty: true,
             last_query: 0,
+            saves_view: false,
+            slots: Vec::new(),
+            pending: None,
         })
     }
 
@@ -164,10 +179,36 @@ impl App {
         }
     }
 
+    // the clickable parts of the screen on view
+    fn parts(&self) -> Vec<u8> {
+        if !self.saves_view {
+            return vec![PART_PLAY, PART_SERVER, PART_UPDATE];
+        }
+        let mut parts = vec![PART_NEW, PART_BACK];
+        for (i, slot) in self.slots.iter().enumerate() {
+            if slot.is_some() {
+                parts.push(PART_DELETE + i as u8);
+                parts.push(PART_SLOT + i as u8);
+            }
+        }
+        parts
+    }
+
     fn part_rect(&self, part: u8, cr: &RECT) -> RECT {
+        let row = |i: u8| self.px(104 + 30 * i as i32);
         match part {
             PART_PLAY => rect(self.px(48), self.px(280), cr.right - self.px(48), self.px(330)),
             PART_SERVER => rect(self.px(48), self.px(342), cr.right - self.px(48), self.px(378)),
+            PART_NEW => rect(self.px(48), self.px(52), cr.right - self.px(48), self.px(94)),
+            PART_BACK => rect(self.px(48), self.px(352), cr.right - self.px(48), self.px(380)),
+            p if p >= PART_DELETE => {
+                let top = row(p - PART_DELETE);
+                rect(cr.right - self.px(48 + 26), top, cr.right - self.px(48), top + self.px(26))
+            }
+            p if p >= PART_SLOT => {
+                let top = row(p - PART_SLOT);
+                rect(self.px(48), top, cr.right - self.px(48 + 32), top + self.px(26))
+            }
             // small square in the top-right corner
             _ => rect(cr.right - self.px(12 + 34), self.px(12), cr.right - self.px(12), self.px(12 + 34)),
         }
@@ -192,7 +233,7 @@ unsafe fn part_at(hwnd: HWND, pt: POINT) -> u8 {
     }
     let mut cr = rect(0, 0, 0, 0);
     GetClientRect(hwnd, &mut cr);
-    for part in [PART_PLAY, PART_SERVER, PART_UPDATE] {
+    for part in (*app).parts() {
         if PtInRect(&(*app).part_rect(part, &cr), pt) != 0 {
             return part;
         }
@@ -381,7 +422,38 @@ unsafe fn try_launch(hwnd: HWND) {
         Some(_) => {}
     }
 
-    match launch::launch_game(Some((&target, &name))) {
+    // everything checked: the saves screen chooses how the game starts
+    app.launching = false;
+    app.pending = Some((target, name));
+    show_saves(hwnd, app, true);
+}
+
+// switches between the fields and the saves screen (the edit controls only belong to the first)
+unsafe fn show_saves(hwnd: HWND, app: &mut App, on: bool) {
+    app.saves_view = on;
+    app.hover = PART_NONE;
+    if on {
+        app.slots = saves::scan();
+    }
+    for edit in app.edits {
+        ShowWindow(edit, if on { SW_HIDE } else { SW_SHOW });
+    }
+    if !on {
+        SetFocus(app.edits[0]);
+    }
+    InvalidateRect(hwnd, std::ptr::null(), FALSE);
+}
+
+// "new" or "slotN": the game goes straight into it, already connected
+unsafe fn start_game(hwnd: HWND, load: &str) {
+    let app = app_ptr(hwnd);
+    if app.is_null() || (*app).launching {
+        return;
+    }
+    let app = &mut *app;
+    let Some((target, name)) = app.pending.clone() else { return };
+    app.launching = true;
+    match launch::launch_game(Some((&target, &name)), Some(load)) {
         Ok(()) => {
             DestroyWindow(hwnd);
         }
@@ -390,6 +462,72 @@ unsafe fn try_launch(hwnd: HWND) {
             message(hwnd, &text, MB_OK | MB_ICONERROR);
         }
     }
+}
+
+unsafe fn delete_slot(hwnd: HWND, slot: usize) {
+    let app = app_ptr(hwnd);
+    if app.is_null() {
+        return;
+    }
+    let app = &mut *app;
+    let Some(Some(info)) = app.slots.get(slot) else { return };
+    let text = format!("\u{bf}Borrar la partida {} \"{}\"?\n\nNo se puede deshacer.", slot + 1, info.name);
+    if message(hwnd, &text, MB_YESNO | MB_ICONWARNING) != IDYES {
+        return;
+    }
+    if let Err(text) = saves::delete(slot) {
+        message(hwnd, &text, MB_OK | MB_ICONERROR);
+    }
+    app.slots = saves::scan();
+    InvalidateRect(hwnd, std::ptr::null(), FALSE);
+}
+
+// like the game's load screen: new game on top, then the eight slots (a cross deletes one), back at the bottom
+unsafe fn paint_saves(hdc: HDC, app: &App, cr: &RECT) {
+    SelectObject(hdc, app.hfont_btn as HGDIOBJ);
+    let title = rect(0, app.px(12), cr.right, app.px(44));
+    text_in(hdc, "PARTIDAS", &title, COL_TEXT, DT_CENTER | DT_VCENTER);
+
+    let new = app.part_rect(PART_NEW, cr);
+    let color = if app.pressed == PART_NEW {
+        COL_YELLOW_DOWN
+    } else if app.hover == PART_NEW {
+        COL_YELLOW_HOT
+    } else {
+        COL_YELLOW
+    };
+    fill_round(hdc, &new, color, app.px(12));
+    text_in(hdc, "NUEVA PARTIDA", &new, COL_BTN_TEXT, DT_CENTER | DT_VCENTER);
+
+    for (i, slot) in app.slots.iter().enumerate() {
+        let part = PART_SLOT + i as u8;
+        let row = app.part_rect(part, cr);
+        let hot = slot.is_some() && (app.hover == part || app.pressed == part);
+        fill_round(hdc, &row, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(6));
+        let inner = rect(row.left + app.px(10), row.top, row.right - app.px(8), row.bottom);
+        SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+        match slot {
+            Some(info) => {
+                text_in(hdc, &format!("{}.  {}", i + 1, info.name), &inner, COL_TEXT, DT_VCENTER | DT_END_ELLIPSIS);
+                SelectObject(hdc, app.hfont_small as HGDIOBJ);
+                let when = if info.saved.is_empty() { info.game_time.clone() } else { info.saved.clone() };
+                text_in(hdc, &when, &inner, COL_MUTED, DT_RIGHT | DT_VCENTER);
+                // the delete cross
+                let del = app.part_rect(PART_DELETE + i as u8, cr);
+                let dhot = app.hover == PART_DELETE + i as u8 || app.pressed == PART_DELETE + i as u8;
+                fill_round(hdc, &del, if dhot { COL_RED } else { COL_SQUARE }, app.px(6));
+                SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+                text_in(hdc, "\u{2715}", &del, if dhot { COL_TEXT } else { COL_MUTED }, DT_CENTER | DT_VCENTER);
+            }
+            None => text_in(hdc, &format!("{}.  vac\u{ed}a", i + 1), &inner, COL_MUTED, DT_VCENTER),
+        }
+    }
+
+    let back = app.part_rect(PART_BACK, cr);
+    let hot = app.hover == PART_BACK || app.pressed == PART_BACK;
+    fill_round(hdc, &back, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(10));
+    SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+    text_in(hdc, "\u{2190}  VOLVER", &back, COL_YELLOW, DT_CENTER | DT_VCENTER);
 }
 
 unsafe fn line(hdc: HDC, points: &[(i32, i32)]) {
@@ -477,6 +615,18 @@ unsafe fn paint(hwnd: HWND) {
     SetBkMode(hdc, TRANSPARENT);
 
     let old_font = SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+    if app.saves_view {
+        paint_saves(hdc, app, &cr);
+        SelectObject(hdc, app.hfont_small as HGDIOBJ);
+        let footer = rect(app.px(24), cr.bottom - app.px(28), cr.right - app.px(24), cr.bottom - app.px(8));
+        if let Some((target, name)) = &app.pending {
+            text_in(hdc, &format!("{} \u{2192} {}", name, target), &footer, COL_MUTED, DT_END_ELLIPSIS);
+        }
+        text_in(hdc, VERSION, &footer, COL_MUTED, DT_RIGHT);
+        SelectObject(hdc, old_font);
+        EndPaint(hwnd, &ps);
+        return;
+    }
     if app.logo != 0 {
         let source = CreateCompatibleDC(hdc);
         if source != 0 {
@@ -645,7 +795,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
             let code = ((wp >> 16) & 0xFFFF) as u32;
             let app = app_ptr(hwnd);
             if id == IDOK {
-                try_launch(hwnd);
+                if !app.is_null() && !(*app).saves_view {
+                    try_launch(hwnd);
+                }
             } else if !app.is_null() && code == EN_CHANGE && (id == ID_ADDRESS || id == ID_PORT) {
                 (*app).dirty = true;
                 if (*app).status != Status::Checking {
@@ -687,7 +839,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
         }
         WM_ERASEBKGND => 1,
         WM_KEYDOWN => {
-            if wp as u32 == VK_RETURN {
+            let app = app_ptr(hwnd);
+            if wp as u32 == VK_RETURN && !app.is_null() && !(*app).saves_view {
                 try_launch(hwnd);
             }
             0
@@ -742,7 +895,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
                     match part {
                         PART_PLAY => try_launch(hwnd),
                         PART_SERVER => try_open_server(hwnd),
-                        _ => try_update(hwnd),
+                        PART_UPDATE => try_update(hwnd),
+                        PART_NEW => start_game(hwnd, "new"),
+                        PART_BACK => show_saves(hwnd, &mut *app, false),
+                        p if p >= PART_DELETE => delete_slot(hwnd, (p - PART_DELETE) as usize),
+                        p if p >= PART_SLOT => start_game(hwnd, &format!("slot{}", p - PART_SLOT + 1)),
+                        _ => {}
                     }
                 }
             }

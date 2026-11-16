@@ -37,6 +37,8 @@ Todo se hace desde `CoopSA.exe`:
 
 Debajo de los campos, el launcher dice en vivo si en esa dirección hay un servidor abierto, su nombre y cuántos jugadores tiene. Antes de abrir el juego también revisa que el servidor esté abierto, que tenga la misma versión que vos y que no esté lleno; si algo falla, te dice qué hacer. El juego entra conectado directamente: no hace falta poner la IP adentro del juego.
 
+Después de JUGAR aparece la pantalla **PARTIDAS**: **NUEVA PARTIDA** o una de tus partidas guardadas, y el juego entra directo en ella, sin pasar por el menú del juego. La **X** de una partida la borra.
+
 ## Mods
 
 `CoopSA.exe` revisa los mods instalados antes de abrir el juego y avisa cuáles rompen el modo cooperativo. Los mods que reemplazan `main.scm` o `script.img` no son compatibles.

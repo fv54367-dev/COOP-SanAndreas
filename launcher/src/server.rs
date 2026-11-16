@@ -109,7 +109,7 @@ fn ini_path() -> String {
     format!("{}\\CoopSA.ini", crate::launch::game_dir())
 }
 
-fn ini_read(file: &str, section: &str, key: &str) -> String {
+pub fn ini_read(file: &str, section: &str, key: &str) -> String {
     let mut buf = [0u16; 256];
     let n = unsafe {
         GetPrivateProfileStringW(
@@ -131,12 +131,10 @@ pub fn load_fields() -> (String, String, String) {
     let mut address = ini_read(&file, "launcher", "direccion");
     let mut port = ini_read(&file, "launcher", "puerto");
     if name.is_empty() && address.is_empty() {
-        if let Ok(profile) = std::env::var("USERPROFILE") {
-            let game = format!("{}\\Documents\\GTA San Andreas User Files\\coopandreas.ini", profile);
-            name = ini_read(&game, "config", "nickname");
-            address = ini_read(&game, "config", "ip");
-            port = ini_read(&game, "config", "port");
-        }
+        let game = format!("{}\\coopandreas.ini", crate::saves::user_dir());
+        name = ini_read(&game, "config", "nickname");
+        address = ini_read(&game, "config", "ip");
+        port = ini_read(&game, "config", "port");
     }
     if address.is_empty() {
         address = "127.0.0.1".to_string();
