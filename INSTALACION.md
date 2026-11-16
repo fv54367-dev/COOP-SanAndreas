@@ -30,8 +30,12 @@ Dentro de la carpeta del juego:
 
 ## Jugar
 
-- **El que hostea** abre `SERVIDOR\server.exe` y después el juego con `CoopSA.exe`.
-- **Los demás** abren el juego con `CoopSA.exe` y se conectan con la IP y el puerto del que hostea.
+Todo se hace desde `CoopSA.exe`:
+
+- **El que hostea** aprieta **ABRIR SERVIDOR** (abre `SERVIDOR\server.exe` y deja la dirección en `127.0.0.1`), escribe su nombre y aprieta **JUGAR**.
+- **Los demás** escriben su nombre y la **IP** (o IP:puerto, o el **código de conexión** que les pasa el host) y aprietan **JUGAR**.
+
+Debajo de los campos, el launcher dice en vivo si en esa dirección hay un servidor abierto, su nombre y cuántos jugadores tiene. Antes de abrir el juego también revisa que el servidor esté abierto, que tenga la misma versión que vos y que no esté lleno; si algo falla, te dice qué hacer. El juego entra conectado directamente: no hace falta poner la IP adentro del juego.
 
 ## Mods
 

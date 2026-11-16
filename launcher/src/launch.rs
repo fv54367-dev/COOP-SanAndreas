@@ -37,7 +37,8 @@ pub fn game_dir() -> String {
     }
 }
 
-pub fn launch_game() -> Result<(), String> {
+// `connect` = the server for -connect (ip:port or a connection code) and the player's name (CLaunchManager)
+pub fn launch_game(connect: Option<(&str, &str)>) -> Result<(), String> {
     unsafe {
         // start the game from the GTA folder
         let dir = game_dir();
@@ -45,7 +46,10 @@ pub fn launch_game() -> Result<(), String> {
         let mut app = dir.clone();
         app.push_str("\\gta_sa.exe");
         let app_w = wide(&app);
-        let mut cmd = wide("gta_sa.exe --coop");
+        let mut cmd = wide(&match connect {
+            Some((address, name)) => format!("gta_sa.exe --coop -connect {} -nick {}", address, name),
+            None => "gta_sa.exe --coop".to_string(),
+        });
 
         let mut si: STARTUPINFOW = std::mem::zeroed();
         si.cb = std::mem::size_of::<STARTUPINFOW>() as DWORD;

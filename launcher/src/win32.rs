@@ -131,6 +131,7 @@ pub const CS_VREDRAW: u32 = 0x0001;
 pub const WS_CAPTION: u32 = 0x00C00000;
 pub const WS_SYSMENU: u32 = 0x00080000;
 pub const WS_MINIMIZEBOX: u32 = 0x00020000;
+pub const WS_CLIPCHILDREN: u32 = 0x02000000;
 pub const WM_CREATE: u32 = 0x0001;
 pub const WM_DESTROY: u32 = 0x0002;
 pub const WM_SIZE: u32 = 0x0005;
@@ -198,6 +199,20 @@ pub const ERROR_ELEVATION_REQUIRED: u32 = 740;
 pub const WM_APP: u32 = 0x8000;
 pub const WM_TIMER: u32 = 0x0113;
 pub const NULL_BRUSH: i32 = 5;
+// edit boxes (launcher fields)
+pub const WS_CHILD: u32 = 0x4000_0000;
+pub const WS_VISIBLE: u32 = 0x1000_0000;
+pub const WS_TABSTOP: u32 = 0x0001_0000;
+pub const ES_AUTOHSCROLL: u32 = 0x0080;
+pub const ES_NUMBER: u32 = 0x2000;
+pub const WM_SETFONT: u32 = 0x0030;
+pub const WM_COMMAND: u32 = 0x0111;
+pub const WM_CTLCOLOREDIT: u32 = 0x0133;
+pub const EM_LIMITTEXT: u32 = 0x00C5;
+pub const EN_CHANGE: u32 = 0x0300;
+pub const IDOK: usize = 1;
+pub const MB_ICONINFORMATION: u32 = 0x40;
+pub const DT_END_ELLIPSIS: u32 = 0x8000;
 pub const PS_GEOMETRIC: DWORD = 0x0001_0000;
 pub const BS_SOLID: UINT = 0;
 
@@ -267,6 +282,10 @@ extern "system" {
     pub fn ReleaseDC(hWnd: HWND, hDC: HDC) -> i32;
     pub fn PostMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
     pub fn SetTimer(hWnd: HWND, nIDEvent: usize, uElapse: UINT, lpTimerFunc: *const core::ffi::c_void) -> usize;
+    pub fn GetWindowTextW(hWnd: HWND, lpString: *mut u16, nMaxCount: i32) -> i32;
+    pub fn SetWindowTextW(hWnd: HWND, lpString: *const u16) -> BOOL;
+    pub fn SetFocus(hWnd: HWND) -> HWND;
+    pub fn IsDialogMessageW(hDlg: HWND, lpMsg: *mut MSG) -> BOOL;
 }
 
 #[link(name = "dwmapi")]
@@ -305,6 +324,7 @@ extern "system" {
     pub fn SelectObject(hdc: HDC, hgdiobj: HGDIOBJ) -> HGDIOBJ;
     pub fn SetBkMode(hdc: HDC, mode: i32) -> i32;
     pub fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF;
+    pub fn SetBkColor(hdc: HDC, color: COLORREF) -> COLORREF;
     pub fn FillRect(hdc: HDC, lprc: *const RECT, hbr: HBRUSH) -> i32;
     pub fn DrawTextW(hdc: HDC, lpchText: *const u16, cchText: i32, lprc: *mut RECT, format: UINT) -> i32;
     pub fn GetTextExtentPoint32W(hdc: HDC, lpString: *const u16, c: i32, lpsz: *mut SIZE) -> BOOL;
@@ -336,6 +356,20 @@ extern "system" {
     pub fn CloseHandle(hObject: HANDLE) -> BOOL;
     pub fn GetLastError() -> DWORD;
     pub fn GetFileAttributesW(lpFileName: *const u16) -> DWORD;
+    pub fn GetPrivateProfileStringW(
+        lpAppName: *const u16,
+        lpKeyName: *const u16,
+        lpDefault: *const u16,
+        lpReturnedString: *mut u16,
+        nSize: DWORD,
+        lpFileName: *const u16,
+    ) -> DWORD;
+    pub fn WritePrivateProfileStringW(
+        lpAppName: *const u16,
+        lpKeyName: *const u16,
+        lpString: *const u16,
+        lpFileName: *const u16,
+    ) -> BOOL;
 }
 
 // UTF-8 -> NUL-terminated UTF-16

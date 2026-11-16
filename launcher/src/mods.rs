@@ -78,6 +78,11 @@ pub struct Report {
 }
 
 impl Report {
+    // a mod of the "broken" list keeps the game from starting (the user, 16-11: no "play anyway")
+    pub fn blocks(&self) -> bool {
+        !self.broken.is_empty()
+    }
+
     pub fn is_clean(&self) -> bool {
         self.broken.is_empty() && self.risky.is_empty() && self.missing.is_empty()
     }

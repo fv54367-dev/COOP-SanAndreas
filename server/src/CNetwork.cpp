@@ -9,6 +9,8 @@
 
 void SendGarageDoorsTo(CNetworkPlayer* pNewPlayer);  // PacketHandlers/world.cpp (T90)
 #include "CInternet.h"
+#include "build_label.h"
+#include <algorithm>
 #include "network/packets/voice.h"
 #include "network/packets/client_config.h"
 #include <network/packets/vehicles.h>
@@ -107,6 +109,24 @@ void SimFlush()
         it = g_delayedPackets.erase(it);
     }
 }
+
+// launcher query (CoopSA.exe asks before starting the game): the raw datagram "COOPSA?1" on the game port gets
+// "COOPSA!1\n<version>\n<build>\n<name>\n<players>\n<max players>\n" back without an ENet connection (ENetHost::intercept)
+int ENET_CALLBACK LauncherQuery(ENetHost* host, ENetEvent*)
+{
+    static const char ask[] = "COOPSA?1";
+    if (host->receivedDataLength != sizeof(ask) - 1 || memcmp(host->receivedData, ask, sizeof(ask) - 1) != 0)
+        return 0;
+    std::string name = CConfigManager::GetConfigName();
+    std::replace(name.begin(), name.end(), '\n', ' ');
+    const std::string reply = std::string("COOPSA!1\n") + COOPSA_VERSION + "\n" + COOPSA_BUILD + "\n" + name + "\n" +
+        std::to_string(CNetworkPlayerManager::m_pPlayers.size()) + "\n" + std::to_string(CConfigManager::GetConfigMaxPlayers()) + "\n";
+    ENetBuffer buffer;
+    buffer.data = const_cast<char*>(reply.data());
+    buffer.dataLength = reply.size();
+    enet_socket_send(host->socket, &host->receivedAddress, &buffer, 1);
+    return 1;
+}
 }  // namespace
 
 bool CNetwork::Init(unsigned short port)
@@ -132,6 +152,7 @@ bool CNetwork::Init(unsigned short port)
         return false;
     }
 
+    pENetHost->intercept = LauncherQuery;
     CServerLog::Printf("[!] : Server started on port %d\n", port);
 
     CInternet::Start(port);
