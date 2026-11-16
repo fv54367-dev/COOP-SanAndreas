@@ -60,7 +60,11 @@ uint16_t CConfigManager::GetConfigPort()
 
 std::string CConfigManager::GetConfigName()
 {
-	return ms_pReader->Get("", "name", "Servidor COOP San Andreas");
+	std::string name = ms_pReader->Get("", "name", "Servidor COOP San Andreas");
+	// configs written before the rename (2026-11-16) still carry the old default name
+	if (name == "Servidor CoopAndreas")
+		name = "Servidor COOP San Andreas";
+	return name;
 }
 
 bool CConfigManager::GetConfigPersistence()
