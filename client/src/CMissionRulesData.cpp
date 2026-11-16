@@ -290,6 +290,13 @@ void Process()
         }
         if (rule.fired || rule.offset >= 0 || !IsHandled(rule))
             continue;
+        // a guest car with no moment and no radius: as soon as the mission runs
+        if (rule.type == "auto_invitado" && rule.radius <= 0.0f)
+        {
+            if (!MissionGuests().empty())
+                Fire(rule, mission);
+            continue;
+        }
         const float radius = rule.radius > 0.0f ? rule.radius : ZONE_RADIUS;
         if ((host->GetPosition() - rule.pos).Magnitude() <= radius)
             Fire(rule, mission);

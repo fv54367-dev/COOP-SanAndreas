@@ -463,11 +463,12 @@ void UseMarksAsTestRules()
     ms_sStatus = "Marcas activas como reglas en esta PC (reglas_prueba.txt). Reintenta la mision para verlas.";
 }
 
-void WriteSnapshot()
+// live = editorivo.txt, rewritten every second for tools/editor/mision_ariane.py (Ariane shows it)
+void WriteSnapshot(bool live = false)
 {
     CRunningScript* mission = FindMission();
     const std::string name = ScriptName(mission);
-    std::ofstream out(EditorDir() + "\\" + name + "_estado.txt", std::ios::trunc);
+    std::ofstream out(EditorDir() + "\\" + (live ? std::string("vivo") : name + "_estado") + ".txt", std::ios::trunc);
     SYSTEMTIME st;
     GetLocalTime(&st);
     char buf[256];
@@ -527,7 +528,8 @@ void WriteSnapshot()
             t.m_nEntityHandle, t.m_vecPos.x, t.m_vecPos.y, t.m_vecPos.z);
         out << buf;
     }
-    ms_sStatus = "Foto guardada: editor\\" + name + "_estado.txt";
+    if (!live)
+        ms_sStatus = "Foto guardada: editor\\" + name + "_estado.txt";
 }
 
 void Process()
@@ -567,6 +569,13 @@ void Process()
 
     ProcessFreeCam();
     ProcessRecording();
+
+    static unsigned lastLive = 0;
+    if (Now() - lastLive >= 1000)
+    {
+        lastLive = Now();
+        WriteSnapshot(true);
+    }
     UpdateControls();
 }
 
