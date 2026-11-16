@@ -15,6 +15,7 @@
 #include <CGangSync.h>
 #include "CTestMode.h"
 #include "UI/CHudHideAll.h"
+#include "Editor/CMissionEditor.h"
 
 semver_t CCore::Version;
 
@@ -79,6 +80,7 @@ void CCore::Init()
 #endif
     CImGui::Init();
     CCheatMenu::Init();
+    CMissionEditor::Init();
     CModeMenu::Init();
     CHudHideAll::Init();
     CSaveMenu::Init();

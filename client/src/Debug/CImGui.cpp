@@ -15,6 +15,7 @@
 #include "CCoopMission.h"
 #include "CConfigLoader.h"
 #include "CMissionHints.h"
+#include "Editor/CMissionEditor.h"
 #include <CFont.h>
 #include <CSprite2d.h>
 
@@ -198,7 +199,7 @@ void CImGui::Init()
 
     Events::drawAfterFadeEvent += []
     {
-        const bool bDraw = (CImGui::ms_bActive || CCheatMenu::ms_bOpen || CModeMenu::ms_bOpen || CMinigameVs::ShouldDraw() || CCoopMission::ShouldDraw() || CVsLobby::ShouldDraw() || CVsRace::ShouldDrawHud() || CVoice::ShouldDraw()) && !FrontEndMenuManager.m_bMenuActive && !CHudHideAll::IsActive();
+        const bool bDraw = (CImGui::ms_bActive || CCheatMenu::ms_bOpen || CModeMenu::ms_bOpen || CMissionEditor::ShouldDraw() || CMinigameVs::ShouldDraw() || CCoopMission::ShouldDraw() || CVsLobby::ShouldDraw() || CVsRace::ShouldDrawHud() || CVoice::ShouldDraw()) && !FrontEndMenuManager.m_bMenuActive && !CHudHideAll::IsActive();
         if (bDraw && !ms_bFrameActive)
         {
             // drop whatever input arrived while no frame ran and start from the real cursor position, otherwise the
@@ -219,7 +220,7 @@ void CImGui::Init()
             ImGui_ImplWin32_NewFrame();
             ImGui::NewFrame();
 
-            if ((CImGui::ms_bActive || CCheatMenu::ms_bOpen || CModeMenu::ms_bOpen) && ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow))
+            if ((CImGui::ms_bActive || CCheatMenu::ms_bOpen || CModeMenu::ms_bOpen || CMissionEditor::IsOpen()) && ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow))
             {
                 CPad::GetPad(0)->DisablePlayerControls |= 0x200;
             }
@@ -252,6 +253,9 @@ void CImGui::Init()
             {
                 CModeMenu::Draw();
             }
+
+            if (CMissionEditor::ShouldDraw())
+                CMissionEditor::Draw();
 
             if (CImGui::ms_bActive)
             {

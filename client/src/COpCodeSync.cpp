@@ -36,6 +36,7 @@
 #include "stdafx.h"
 #include "CMissionLock.h"
 #include "CCoopPool.h"
+#include "Editor/CMissionEditor.h"
 #include "CActivityChallenge.h"
 #include "CMissionMode.h"
 #include "CMissionSyncRules.h"
@@ -1699,6 +1700,7 @@ static void PoolBeforeCommand()
 {
     CActivityChallenge::BeforeCommand(lastProcessedScript, static_cast<uint16_t>(lastOpCodeProcessed) & 0x7FFF);
     CCoopPool::BeforeCommand(lastProcessedScript, static_cast<uint16_t>(lastOpCodeProcessed));
+    CMissionEditor::BeforeCommand(lastProcessedScript, static_cast<uint16_t>(lastOpCodeProcessed));
 }
 
 void __declspec(naked) FinishedOpcodeProcessing_Hook()

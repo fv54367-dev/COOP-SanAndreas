@@ -3,6 +3,7 @@
 #include "CCoopPool.h"
 #include "CCoopLowrider.h"
 #include "CCameraMirror.h"
+#include "Editor/CMissionEditor.h"
 #include <COpCodeSync.h>
 #include <CCoopMission.h>
 #include <CMissionMirror.h>
@@ -239,7 +240,8 @@ void CCameraMirror::SendHost()
     // only what the mission script set: a garage, a shop script or an entry/exit also puts bars or a fixed camera on the
     // host, and that is his own moment (the guests kept getting his camera there)
     const bool bWide = bMissionScene && ms_bScriptWide && TheCamera.m_bWideScreenOn;
-    bool active = bMissionScene && !CCutsceneMgr::ms_running && (bWide || (ms_bScriptCamera && !IsInteriorMoment() && IsScriptCameraActive(false)));
+    // the mission editor's free camera is this player's own, never the scene's
+    bool active = bMissionScene && !CCutsceneMgr::ms_running && !CMissionEditor::IsFreeCam() && (bWide || (ms_bScriptCamera && !IsInteriorMoment() && IsScriptCameraActive(false)));
 
     if (!active)
     {
