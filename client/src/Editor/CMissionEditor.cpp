@@ -575,9 +575,12 @@ void DrawMarksInWorld()
 
 void CMissionEditor::Init()
 {
-    if (!CConfigLoader::ms_bMissionEditor)
-        return;
-    Events::gameProcessEvent.after += [] { Process(); };
+    // the switch is read later (CConfigLoader::Init runs from CCustomMenuManager, after CCore::Init): checked each frame
+    Events::gameProcessEvent.after += []
+    {
+        if (CConfigLoader::ms_bMissionEditor)
+            Process();
+    };
 }
 
 bool CMissionEditor::IsOpen()
