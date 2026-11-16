@@ -1,6 +1,6 @@
 set_project("COOPSanAndreas")
--- content-hashed object cache (build/.build_cache): the CI keeps it between runs
-set_policy("build.ccache", true)
+-- no build.ccache: with MSVC and the precompiled headers it never hit on a fresh CI machine and made every compile
+-- several times slower (642 files: 4 min without it, 18-51 min with it, 2026-11-14/16)
 
 set_languages("cxx17")
 set_arch("x86")
