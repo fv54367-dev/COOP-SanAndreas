@@ -62,6 +62,7 @@ const PART_UPDATE: u8 = 3;
 // the saves screen (after JUGAR): new game, back, a row per slot and its delete cross
 const PART_NEW: u8 = 4;
 const PART_BACK: u8 = 5;
+const PART_FOLDER: u8 = 8; // top-left square: where the saves are
 const PART_SLOT: u8 = 10; // + slot (0..7)
 const PART_DELETE: u8 = 20; // + slot (0..7)
 // the servers screen (top-left square of the main one): search again, back, a row per server found
@@ -207,7 +208,7 @@ impl App {
         if !self.saves_view {
             return vec![PART_PLAY, PART_SERVER, PART_UPDATE, PART_LIST];
         }
-        let mut parts = vec![PART_NEW, PART_BACK];
+        let mut parts = vec![PART_NEW, PART_BACK, PART_FOLDER];
         for (i, slot) in self.slots.iter().enumerate() {
             if slot.is_some() {
                 parts.push(PART_DELETE + i as u8);
@@ -224,7 +225,7 @@ impl App {
             PART_SERVER => rect(self.px(48), self.px(342), cr.right - self.px(48), self.px(378)),
             PART_NEW | PART_RESCAN => rect(self.px(48), self.px(52), cr.right - self.px(48), self.px(94)),
             PART_BACK => rect(self.px(48), self.px(352), cr.right - self.px(48), self.px(380)),
-            PART_LIST => rect(self.px(12), self.px(12), self.px(12 + 34), self.px(12 + 34)),
+            PART_LIST | PART_FOLDER => rect(self.px(12), self.px(12), self.px(12 + 34), self.px(12 + 34)),
             p if p >= PART_ROW => {
                 let top = row(p - PART_ROW);
                 rect(self.px(48), top, cr.right - self.px(48), top + self.px(26))
@@ -636,11 +637,46 @@ unsafe fn delete_slot(hwnd: HWND, slot: usize) {
     InvalidateRect(hwnd, std::ptr::null(), FALSE);
 }
 
+// the folder dialog; the list shows what the chosen folder has
+unsafe fn choose_folder(hwnd: HWND) {
+    let app = app_ptr(hwnd);
+    if app.is_null() {
+        return;
+    }
+    match saves::choose_dir(hwnd) {
+        Ok(Some(_)) => {
+            (*app).slots = saves::scan();
+            InvalidateRect(hwnd, std::ptr::null(), FALSE);
+        }
+        Ok(None) => {}
+        Err(text) => {
+            message(hwnd, &text, MB_OK | MB_ICONWARNING);
+        }
+    }
+}
+
+// a folder outline in the top-left square
+unsafe fn paint_folder(hdc: HDC, app: &App, cr: &RECT) {
+    let rc = app.part_rect(PART_FOLDER, cr);
+    let hot = app.hover == PART_FOLDER || app.pressed == PART_FOLDER;
+    fill_round(hdc, &rc, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(8));
+    let brush = LOGBRUSH { lbStyle: BS_SOLID, lbColor: if hot { COL_YELLOW } else { COL_MUTED }, lbHatch: 0 };
+    let pen = ExtCreatePen(PS_GEOMETRIC, app.px(2).max(2) as DWORD, &brush, 0, std::ptr::null());
+    let old_pen = SelectObject(hdc, pen);
+    let cx = (rc.left + rc.right) / 2;
+    let cy = (rc.top + rc.bottom) / 2;
+    let p = |x: i32, y: i32| (cx + app.px(x), cy + app.px(y));
+    line(hdc, &[p(-9, -6), p(-3, -6), p(-1, -4), p(9, -4), p(9, 7), p(-9, 7), p(-9, -6)]);
+    SelectObject(hdc, old_pen);
+    DeleteObject(pen);
+}
+
 // like the game's load screen: new game on top, then the eight slots (a cross deletes one), back at the bottom
 unsafe fn paint_saves(hdc: HDC, app: &App, cr: &RECT) {
     SelectObject(hdc, app.hfont_btn as HGDIOBJ);
     let title = rect(0, app.px(12), cr.right, app.px(44));
     text_in(hdc, "PARTIDAS", &title, COL_TEXT, DT_CENTER | DT_VCENTER);
+    paint_folder(hdc, app, cr);
 
     let new = app.part_rect(PART_NEW, cr);
     let color = if app.pressed == PART_NEW {
@@ -805,7 +841,10 @@ unsafe fn paint(hwnd: HWND) {
         paint_saves(hdc, app, &cr);
         SelectObject(hdc, app.hfont_small as HGDIOBJ);
         let footer = rect(app.px(24), cr.bottom - app.px(28), cr.right - app.px(24), cr.bottom - app.px(8));
-        if let Some((target, name)) = &app.pending {
+        if app.hover == PART_FOLDER {
+            let left = rect(footer.left, footer.top, footer.right - app.px(60), footer.bottom);
+            text_in(hdc, &format!("Partidas en: {}", saves::user_dir()), &left, COL_MUTED, DT_PATH_ELLIPSIS);
+        } else if let Some((target, name)) = &app.pending {
             text_in(hdc, &format!("{} \u{2192} {}", name, target), &footer, COL_MUTED, DT_END_ELLIPSIS);
         }
         text_in(hdc, VERSION, &footer, COL_MUTED, DT_RIGHT);
@@ -1115,6 +1154,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
                         PART_RESCAN => start_scan(hwnd),
                         PART_BACK if (*app).servers_view => show_servers(hwnd, &mut *app, false),
                         PART_BACK => show_saves(hwnd, &mut *app, false),
+                        PART_FOLDER => choose_folder(hwnd),
                         p if p >= PART_ROW => pick_server(hwnd, (p - PART_ROW) as usize),
                         p if p >= PART_DELETE => delete_slot(hwnd, (p - PART_DELETE) as usize),
                         p if p >= PART_SLOT => start_game(hwnd, &format!("slot{}", p - PART_SLOT + 1)),

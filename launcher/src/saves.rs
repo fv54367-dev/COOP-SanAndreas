@@ -26,7 +26,104 @@ pub fn user_dir() -> String {
     if !custom.is_empty() {
         return if custom.contains(':') || custom.starts_with('\\') { custom } else { format!("{}\\{}", game, custom) };
     }
+    default_dir()
+}
+
+fn default_dir() -> String {
     format!("{}\\GTA San Andreas User Files", documents_dir())
+}
+
+// the folder dialog: starts at the current folder; Ok(None) = cancelled, Ok(Some) = the folder now in use
+pub fn choose_dir(owner: HWND) -> Result<Option<String>, String> {
+    let current = user_dir();
+    let title = wide(&format!(
+        "Carpeta de las partidas guardadas.\nAhora: {}\nLa de siempre es Documentos\\GTA San Andreas User Files.",
+        current
+    ));
+    let start = wide(&current);
+    let mut name = [0u16; 260];
+    let mut info = BROWSEINFOW {
+        hwndOwner: owner,
+        pidlRoot: std::ptr::null(),
+        pszDisplayName: name.as_mut_ptr(),
+        lpszTitle: title.as_ptr(),
+        ulFlags: BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE,
+        lpfn: Some(browse_callback),
+        lParam: start.as_ptr() as LPARAM,
+        iImage: 0,
+    };
+    let chosen = unsafe {
+        CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED);
+        let pidl = SHBrowseForFolderW(&mut info);
+        if pidl.is_null() {
+            return Ok(None);
+        }
+        let mut buf = [0u16; 260];
+        let ok = SHGetPathFromIDListW(pidl, buf.as_mut_ptr()) != 0;
+        CoTaskMemFree(pidl);
+        if !ok {
+            return Err("Esa carpeta no se puede usar (eleg\u{ed} una carpeta del disco).".to_string());
+        }
+        let n = buf.iter().position(|&c| c == 0).unwrap_or(0);
+        String::from_utf16_lossy(&buf[..n])
+    };
+    set_dir(&chosen).map(Some)
+}
+
+unsafe extern "system" fn browse_callback(hwnd: HWND, msg: UINT, _lp: LPARAM, data: LPARAM) -> i32 {
+    if msg == BFFM_INITIALIZED {
+        SendMessageW(hwnd, BFFM_SETSELECTIONW, 1, data);
+    }
+    0
+}
+
+// writes [config] user-dir (or removes it for the usual folder) and brings gta_sa.set / coopandreas.ini along
+fn set_dir(chosen: &str) -> Result<String, String> {
+    let chosen = chosen.trim_end_matches(['\\', '/']).to_string();
+    // the game builds its paths with ANSI calls into small buffers (client CTestMode: at most 200 letters)
+    if !chosen.is_ascii() {
+        return Err(format!(
+            "La ruta tiene letras que el juego no entiende (\u{f1}, tildes...):\n{}\n\nEleg\u{ed} o cre\u{e1} una carpeta con un nombre simple.",
+            chosen
+        ));
+    }
+    if chosen.len() >= 200 {
+        return Err("La ruta es demasiado larga (m\u{e1}ximo 200 letras).".to_string());
+    }
+    let game = crate::launch::game_dir();
+    let mod_dir = format!("{}\\CoopAndreas", game);
+    if chosen.eq_ignore_ascii_case(&mod_dir) {
+        return Err("Esa es la carpeta del mod: eleg\u{ed} otra.".to_string());
+    }
+
+    let old = user_dir();
+    let local = format!("{}\\coopandreas.ini", mod_dir);
+    let test_mode = crate::server::ini_read(&local, "config", "test-mode");
+    let test_mode = test_mode.eq_ignore_ascii_case("true") || test_mode == "1";
+    // the usual folder: no key at all (test mode needs it written, its default is UserFiles)
+    let value = if chosen.eq_ignore_ascii_case(&default_dir()) && !test_mode { None } else { Some(chosen.clone()) };
+    let ok = unsafe {
+        let value_w = value.as_deref().map(wide);
+        WritePrivateProfileStringW(
+            wide("config").as_ptr(),
+            wide("user-dir").as_ptr(),
+            value_w.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
+            wide(&local).as_ptr(),
+        )
+    } != 0;
+    if !ok {
+        return Err(format!("No se pudo guardar la carpeta en {}.", local));
+    }
+
+    let _ = std::fs::create_dir_all(&chosen);
+    if !old.eq_ignore_ascii_case(&chosen) {
+        for file in ["gta_sa.set", "coopandreas.ini"] {
+            let from = wide(&format!("{}\\{}", old, file));
+            let to = wide(&format!("{}\\{}", chosen, file));
+            unsafe { CopyFileW(from.as_ptr(), to.as_ptr(), 1) };
+        }
+    }
+    Ok(chosen)
 }
 
 pub fn documents_dir() -> String {

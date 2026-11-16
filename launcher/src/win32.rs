@@ -227,6 +227,7 @@ pub const EN_CHANGE: u32 = 0x0300;
 pub const IDOK: usize = 1;
 pub const MB_ICONINFORMATION: u32 = 0x40;
 pub const DT_END_ELLIPSIS: u32 = 0x8000;
+pub const DT_PATH_ELLIPSIS: u32 = 0x4000;
 pub const SW_HIDE: i32 = 0;
 pub const CSIDL_PERSONAL: i32 = 5;
 pub const PS_GEOMETRIC: DWORD = 0x0001_0000;
@@ -307,6 +308,34 @@ extern "system" {
 #[link(name = "shell32")]
 extern "system" {
     pub fn SHGetFolderPathW(hwnd: HWND, csidl: i32, hToken: HANDLE, dwFlags: DWORD, pszPath: *mut u16) -> i32;
+    pub fn SHBrowseForFolderW(lpbi: *mut BROWSEINFOW) -> *mut c_void;
+    pub fn SHGetPathFromIDListW(pidl: *const c_void, pszPath: *mut u16) -> BOOL;
+}
+
+#[link(name = "ole32")]
+extern "system" {
+    pub fn CoInitializeEx(reserved: *mut c_void, coinit: DWORD) -> i32;
+    pub fn CoTaskMemFree(pv: *mut c_void);
+}
+
+pub const COINIT_APARTMENTTHREADED: DWORD = 2;
+pub const BIF_RETURNONLYFSDIRS: UINT = 0x1;
+pub const BIF_NEWDIALOGSTYLE: UINT = 0x40;
+pub const BFFM_INITIALIZED: UINT = 1;
+pub const BFFM_SETSELECTIONW: UINT = 0x400 + 103;
+
+pub type BFFCALLBACK = Option<unsafe extern "system" fn(HWND, UINT, LPARAM, LPARAM) -> i32>;
+
+#[repr(C)]
+pub struct BROWSEINFOW {
+    pub hwndOwner: HWND,
+    pub pidlRoot: *const c_void,
+    pub pszDisplayName: *mut u16,
+    pub lpszTitle: *const u16,
+    pub ulFlags: UINT,
+    pub lpfn: BFFCALLBACK,
+    pub lParam: LPARAM,
+    pub iImage: i32,
 }
 
 #[link(name = "dwmapi")]
@@ -377,6 +406,7 @@ extern "system" {
     pub fn CloseHandle(hObject: HANDLE) -> BOOL;
     pub fn GetLastError() -> DWORD;
     pub fn GetFileAttributesW(lpFileName: *const u16) -> DWORD;
+    pub fn CopyFileW(lpExistingFileName: *const u16, lpNewFileName: *const u16, bFailIfExists: BOOL) -> BOOL;
     pub fn GetLocalTime(lpSystemTime: *mut SYSTEMTIME);
     pub fn GetPrivateProfileStringW(
         lpAppName: *const u16,
