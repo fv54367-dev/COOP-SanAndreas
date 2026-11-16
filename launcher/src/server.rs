@@ -1,7 +1,7 @@
 // The server side of the launcher: what was typed (name, address, port, remembered in CoopSA.ini next to the
 // exe), the address it means (IPv4, IPv4:port or a connection code like the in-game one, shared/ConnectionCode.h),
 // the status query the server answers on its game port without an ENet connection (server CNetwork LauncherQuery)
-// and opening SERVIDOR\server.exe.
+// the same query broadcast to the local network (discover, the SERVIDORES screen) and opening SERVIDOR\server.exe.
 use crate::win32::*;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::os::windows::process::CommandExt;
@@ -88,21 +88,103 @@ pub fn query(addr: SocketAddrV4, wait_ms: u64) -> Option<Info> {
             if from.ip() != std::net::IpAddr::V4(*addr.ip()) {
                 continue;
             }
-            let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-            let mut lines = text.split('\n');
-            if lines.next() != Some("COOPSA!1") {
-                return None;
-            }
-            let mut next = || lines.next().unwrap_or("").to_string();
-            let version = next();
-            let build = next();
-            let name = next();
-            let players = next().parse().unwrap_or(0);
-            let max = next().parse().unwrap_or(0);
-            return Some(Info { version, build, name, players, max });
+            return parse_reply(&buf[..n]);
         }
     }
     None
+}
+
+fn parse_reply(data: &[u8]) -> Option<Info> {
+    let text = String::from_utf8_lossy(data).into_owned();
+    let mut lines = text.split('\n');
+    if lines.next() != Some("COOPSA!1") {
+        return None;
+    }
+    let mut next = || lines.next().unwrap_or("").to_string();
+    let version = next();
+    let build = next();
+    let name = next();
+    let players = next().parse().unwrap_or(0);
+    let max = next().parse().unwrap_or(0);
+    Some(Info { version, build, name, players, max })
+}
+
+#[derive(Clone)]
+pub struct Found {
+    pub addr: SocketAddrV4,
+    pub info: Info,
+    pub ping_ms: u32,
+}
+
+// the IPv4 addresses of this PC (every adapter: LAN, Wi-Fi, Radmin/ZeroTier/Hamachi...)
+fn local_ips() -> Vec<Ipv4Addr> {
+    use std::net::ToSocketAddrs;
+    let host = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "localhost".to_string());
+    let mut ips: Vec<Ipv4Addr> = (host.as_str(), 0)
+        .to_socket_addrs()
+        .map(|list| list.filter_map(|a| match a.ip() { std::net::IpAddr::V4(ip) => Some(ip), _ => None }).collect())
+        .unwrap_or_default();
+    ips.retain(|ip| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_link_local());
+    ips.dedup();
+    ips
+}
+
+// COOPSA?1 to the whole network: the limited broadcast, the broadcast of each adapter (the mask is unknown, so /24, /16
+// and /8) and this PC itself, on the default port and the next three (the local test servers) plus SERVIDOR's own.
+// Two rounds (UDP may drop one); a server is listed once, the fastest answer gives the ping.
+pub fn discover(wait_ms: u64) -> Vec<Found> {
+    let Ok(socket) = UdpSocket::bind("0.0.0.0:0") else { return Vec::new() };
+    let _ = socket.set_broadcast(true);
+    let own = local_ips();
+    let mut targets = vec![Ipv4Addr::BROADCAST, Ipv4Addr::LOCALHOST];
+    for ip in &own {
+        let o = ip.octets();
+        targets.push(Ipv4Addr::new(o[0], o[1], o[2], 255));
+        targets.push(Ipv4Addr::new(o[0], o[1], 255, 255));
+        targets.push(Ipv4Addr::new(o[0], 255, 255, 255));
+    }
+    targets.sort();
+    targets.dedup();
+    let mut ports: Vec<u16> = (DEFAULT_PORT..DEFAULT_PORT + 4).collect();
+    let own_port = local_port();
+    if !ports.contains(&own_port) {
+        ports.push(own_port);
+    }
+
+    let start = std::time::Instant::now();
+    let mut found: Vec<Found> = Vec::new();
+    let mut buf = [0u8; 512];
+    for round in 0..2u64 {
+        let sent = std::time::Instant::now();
+        for ip in &targets {
+            for port in &ports {
+                let _ = socket.send_to(b"COOPSA?1", SocketAddrV4::new(*ip, *port));
+            }
+        }
+        let until = start + Duration::from_millis(wait_ms * (round + 1) / 2);
+        loop {
+            let now = std::time::Instant::now();
+            if now >= until {
+                break;
+            }
+            let _ = socket.set_read_timeout(Some((until - now).max(Duration::from_millis(1))));
+            let Ok((n, from)) = socket.recv_from(&mut buf) else { continue };
+            let std::net::SocketAddr::V4(from) = from else { continue };
+            let Some(info) = parse_reply(&buf[..n]) else { continue };
+            let ping_ms = sent.elapsed().as_millis() as u32;
+            // this PC answers on 127.0.0.1 and on each of its addresses: keep it once, as 127.0.0.1
+            let addr = if own.contains(from.ip()) { SocketAddrV4::new(Ipv4Addr::LOCALHOST, from.port()) } else { from };
+            match found.iter_mut().find(|f| f.addr == addr) {
+                Some(f) => {
+                    f.ping_ms = f.ping_ms.min(ping_ms);
+                    f.info = info;
+                }
+                None => found.push(Found { addr, info, ping_ms }),
+            }
+        }
+    }
+    found.sort_by(|a, b| a.ping_ms.cmp(&b.ping_ms).then(a.info.name.cmp(&b.info.name)));
+    found
 }
 
 fn ini_path() -> String {
@@ -229,5 +311,16 @@ mod tests {
         assert_eq!((info.players, info.max), (2, 8));
         // nobody on that port any more: no answer
         assert!(query(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9), 200).is_none());
+    }
+
+    // a real server open on this PC (PROBAR_SOLO or SERVIDOR\server.exe) shows up once, as 127.0.0.1
+    #[test]
+    #[ignore]
+    fn discover_lists_local_servers() {
+        let list = discover(800);
+        for f in &list {
+            println!("{} {} {}/{} {} ms {}", f.addr, f.info.name, f.info.players, f.info.max, f.ping_ms, f.info.build);
+        }
+        assert!(!list.is_empty());
     }
 }

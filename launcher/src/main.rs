@@ -37,6 +37,8 @@ const COL_RED: u32 = rgb(0xE5, 0x5C, 0x5C);
 const WM_UPDATE_STATE: u32 = WM_APP + 1;
 // posted by the server status thread (the result is in STATUS)
 const WM_SERVER_STATE: u32 = WM_APP + 2;
+// posted by the network search of the SERVIDORES screen (the result is in FOUND)
+const WM_SERVERS_FOUND: u32 = WM_APP + 3;
 const UPDATE_TIMER: usize = 1;
 const STATUS_TIMER: usize = 2;
 
@@ -62,9 +64,16 @@ const PART_NEW: u8 = 4;
 const PART_BACK: u8 = 5;
 const PART_SLOT: u8 = 10; // + slot (0..7)
 const PART_DELETE: u8 = 20; // + slot (0..7)
+// the servers screen (top-left square of the main one): search again, back, a row per server found
+const PART_LIST: u8 = 6;
+const PART_RESCAN: u8 = 7;
+const PART_ROW: u8 = 30; // + row (0..7)
+const MAX_ROWS: usize = 8;
 
 // the last answer of the status thread: (number of the query, what it found)
 static STATUS: Mutex<(u32, Option<server::Info>)> = Mutex::new((0, None));
+// the last answer of the network search
+static FOUND: Mutex<Vec<server::Found>> = Mutex::new(Vec::new());
 
 #[derive(PartialEq)]
 enum Status {
@@ -96,6 +105,11 @@ struct App {
     saves_view: bool,
     slots: Vec<Option<saves::Slot>>,
     pending: Option<(String, String)>,
+    // the servers screen: what the last search found, searching now, when it ended
+    servers_view: bool,
+    servers: Vec<server::Found>,
+    scanning: bool,
+    last_scan: u32,
 }
 
 unsafe fn make_font(pt: i32, dpi: i32, bold: bool) -> HFONT {
@@ -161,6 +175,10 @@ impl App {
             saves_view: false,
             slots: Vec::new(),
             pending: None,
+            servers_view: false,
+            servers: Vec::new(),
+            scanning: false,
+            last_scan: 0,
         })
     }
 
@@ -181,8 +199,13 @@ impl App {
 
     // the clickable parts of the screen on view
     fn parts(&self) -> Vec<u8> {
+        if self.servers_view {
+            let mut parts = vec![PART_RESCAN, PART_BACK];
+            parts.extend((0..self.servers.len().min(MAX_ROWS)).map(|i| PART_ROW + i as u8));
+            return parts;
+        }
         if !self.saves_view {
-            return vec![PART_PLAY, PART_SERVER, PART_UPDATE];
+            return vec![PART_PLAY, PART_SERVER, PART_UPDATE, PART_LIST];
         }
         let mut parts = vec![PART_NEW, PART_BACK];
         for (i, slot) in self.slots.iter().enumerate() {
@@ -199,8 +222,13 @@ impl App {
         match part {
             PART_PLAY => rect(self.px(48), self.px(280), cr.right - self.px(48), self.px(330)),
             PART_SERVER => rect(self.px(48), self.px(342), cr.right - self.px(48), self.px(378)),
-            PART_NEW => rect(self.px(48), self.px(52), cr.right - self.px(48), self.px(94)),
+            PART_NEW | PART_RESCAN => rect(self.px(48), self.px(52), cr.right - self.px(48), self.px(94)),
             PART_BACK => rect(self.px(48), self.px(352), cr.right - self.px(48), self.px(380)),
+            PART_LIST => rect(self.px(12), self.px(12), self.px(12 + 34), self.px(12 + 34)),
+            p if p >= PART_ROW => {
+                let top = row(p - PART_ROW);
+                rect(self.px(48), top, cr.right - self.px(48), top + self.px(26))
+            }
             p if p >= PART_DELETE => {
                 let top = row(p - PART_DELETE);
                 rect(cr.right - self.px(48 + 26), top, cr.right - self.px(48), top + self.px(26))
@@ -469,6 +497,107 @@ unsafe fn show_saves(hwnd: HWND, app: &mut App, on: bool) {
     InvalidateRect(hwnd, std::ptr::null(), FALSE);
 }
 
+// switches between the fields and the servers screen; entering it starts a search
+unsafe fn show_servers(hwnd: HWND, app: &mut App, on: bool) {
+    app.servers_view = on;
+    app.hover = PART_NONE;
+    for edit in app.edits {
+        ShowWindow(edit, if on { SW_HIDE } else { SW_SHOW });
+    }
+    if on {
+        start_scan(hwnd);
+    } else {
+        SetFocus(app.edits[0]);
+    }
+    InvalidateRect(hwnd, std::ptr::null(), FALSE);
+}
+
+// the search runs in a thread (~0,8 s); WM_SERVERS_FOUND brings the list back
+unsafe fn start_scan(hwnd: HWND) {
+    let app = app_ptr(hwnd);
+    if app.is_null() || (*app).scanning {
+        return;
+    }
+    (*app).scanning = true;
+    InvalidateRect(hwnd, std::ptr::null(), FALSE);
+    let hwnd_value = hwnd as isize;
+    std::thread::spawn(move || {
+        let list = server::discover(800);
+        if let Ok(mut found) = FOUND.lock() {
+            *found = list;
+        }
+        PostMessageW(hwnd_value as HWND, WM_SERVERS_FOUND, 0, 0);
+    });
+}
+
+// a row: its address goes to the fields and JUGAR runs its checks (then the saves screen)
+unsafe fn pick_server(hwnd: HWND, row: usize) {
+    let app = app_ptr(hwnd);
+    if app.is_null() || (*app).launching {
+        return;
+    }
+    let app = &mut *app;
+    let Some(found) = app.servers.get(row).cloned() else { return };
+    set_field(app, ID_ADDRESS, &found.addr.ip().to_string());
+    set_field(app, ID_PORT, &found.addr.port().to_string());
+    app.status = Status::Checking;
+    app.dirty = true;
+    show_servers(hwnd, app, false);
+    try_launch(hwnd);
+}
+
+unsafe fn paint_servers(hdc: HDC, app: &App, cr: &RECT) {
+    SelectObject(hdc, app.hfont_btn as HGDIOBJ);
+    let title = rect(0, app.px(12), cr.right, app.px(44));
+    text_in(hdc, "SERVIDORES EN TU RED", &title, COL_TEXT, DT_CENTER | DT_VCENTER);
+
+    let again = app.part_rect(PART_RESCAN, cr);
+    let hot = app.hover == PART_RESCAN || app.pressed == PART_RESCAN;
+    fill_round(hdc, &again, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(12));
+    SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+    let label = if app.scanning { "Buscando..." } else { "\u{21bb}  BUSCAR DE NUEVO" };
+    text_in(hdc, label, &again, COL_YELLOW, DT_CENTER | DT_VCENTER);
+
+    for (i, found) in app.servers.iter().take(MAX_ROWS).enumerate() {
+        let part = PART_ROW + i as u8;
+        let row = app.part_rect(part, cr);
+        let hot = app.hover == part || app.pressed == part;
+        fill_round(hdc, &row, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(6));
+        let inner = rect(row.left + app.px(10), row.top, row.right - app.px(10), row.bottom);
+        // the right side first, so the name can stop before it
+        SelectObject(hdc, app.hfont_small as HGDIOBJ);
+        let (detail, color) = if found.info.version != VERSION {
+            (format!("otra versi\u{f3}n ({})", found.info.version), COL_YELLOW)
+        } else {
+            (format!("{}/{}  \u{b7}  {} ms", found.info.players, found.info.max, found.ping_ms), COL_MUTED)
+        };
+        let mut size = SIZE { cx: 0, cy: 0 };
+        let detail_w = wide(&detail);
+        GetTextExtentPoint32W(hdc, detail_w.as_ptr(), detail_w.len() as i32 - 1, &mut size);
+        text_in(hdc, &detail, &inner, color, DT_RIGHT | DT_VCENTER);
+        SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+        let name = if found.info.name.is_empty() { found.addr.to_string() } else { found.info.name.clone() };
+        let left = rect(inner.left, inner.top, inner.right - size.cx - app.px(12), inner.bottom);
+        text_in(hdc, &name, &left, COL_TEXT, DT_VCENTER | DT_END_ELLIPSIS);
+    }
+    if app.servers.is_empty() && !app.scanning {
+        SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+        let first = rect(app.px(24), app.px(140), cr.right - app.px(24), app.px(164));
+        text_in(hdc, "No se encontr\u{f3} ning\u{fa}n servidor en tu red.", &first, COL_MUTED, DT_CENTER | DT_VCENTER);
+        SelectObject(hdc, app.hfont_small as HGDIOBJ);
+        let second = rect(app.px(24), app.px(168), cr.right - app.px(24), app.px(188));
+        text_in(hdc, "El host lo abre con ABRIR SERVIDOR. Si igual no aparece,", &second, COL_MUTED, DT_CENTER | DT_VCENTER);
+        let third = rect(app.px(24), app.px(188), cr.right - app.px(24), app.px(208));
+        text_in(hdc, "escrib\u{ed} su IP a mano (o revisen el firewall de Windows).", &third, COL_MUTED, DT_CENTER | DT_VCENTER);
+    }
+
+    let back = app.part_rect(PART_BACK, cr);
+    let hot = app.hover == PART_BACK || app.pressed == PART_BACK;
+    fill_round(hdc, &back, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(10));
+    SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+    text_in(hdc, "\u{2190}  VOLVER", &back, COL_YELLOW, DT_CENTER | DT_VCENTER);
+}
+
 // "new" or "slotN": the game goes straight into it, already connected
 unsafe fn start_game(hwnd: HWND, load: &str) {
     let app = app_ptr(hwnd);
@@ -623,6 +752,28 @@ unsafe fn paint_update(hdc: HDC, app: &App, cr: &RECT) {
     }
 }
 
+// rounded square with three lines (a list): the servers screen
+unsafe fn paint_list(hdc: HDC, app: &App, cr: &RECT) {
+    let rc = app.part_rect(PART_LIST, cr);
+    let hot = app.hover == PART_LIST || app.pressed == PART_LIST;
+    fill_round(hdc, &rc, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(8));
+    let brush = LOGBRUSH { lbStyle: BS_SOLID, lbColor: if hot { COL_YELLOW } else { COL_MUTED }, lbHatch: 0 };
+    let pen = ExtCreatePen(PS_GEOMETRIC, app.px(2).max(2) as DWORD, &brush, 0, std::ptr::null());
+    let old_pen = SelectObject(hdc, pen);
+    let cx = (rc.left + rc.right) / 2;
+    let cy = (rc.top + rc.bottom) / 2;
+    for dy in [-6, 0, 6] {
+        line(hdc, &[(cx - app.px(8), cy + app.px(dy)), (cx + app.px(8), cy + app.px(dy))]);
+    }
+    SelectObject(hdc, old_pen);
+    DeleteObject(pen);
+    if app.hover == PART_LIST {
+        SelectObject(hdc, app.hfont_small as HGDIOBJ);
+        let hint = rect(rc.right + app.px(8), rc.top, cr.right / 2, rc.bottom);
+        text_in(hdc, "Servidores en tu red", &hint, COL_MUTED, DT_VCENTER);
+    }
+}
+
 unsafe fn paint(hwnd: HWND) {
     let app = app_ptr(hwnd);
     if app.is_null() {
@@ -640,6 +791,16 @@ unsafe fn paint(hwnd: HWND) {
     SetBkMode(hdc, TRANSPARENT);
 
     let old_font = SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+    if app.servers_view {
+        paint_servers(hdc, app, &cr);
+        SelectObject(hdc, app.hfont_small as HGDIOBJ);
+        let footer = rect(app.px(24), cr.bottom - app.px(28), cr.right - app.px(24), cr.bottom - app.px(8));
+        text_in(hdc, "Toc\u{e1} uno para entrar", &footer, COL_MUTED, 0);
+        text_in(hdc, VERSION, &footer, COL_MUTED, DT_RIGHT);
+        SelectObject(hdc, old_font);
+        EndPaint(hwnd, &ps);
+        return;
+    }
     if app.saves_view {
         paint_saves(hdc, app, &cr);
         SelectObject(hdc, app.hfont_small as HGDIOBJ);
@@ -717,6 +878,7 @@ unsafe fn paint(hwnd: HWND) {
     text_in(hdc, VERSION, &footer, COL_MUTED, DT_RIGHT);
 
     paint_update(hdc, app, &cr);
+    paint_list(hdc, app, &cr);
 
     SelectObject(hdc, old_font);
     EndPaint(hwnd, &ps);
@@ -791,6 +953,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
             if !app.is_null() && ((*app).dirty || tick().wrapping_sub((*app).last_query) >= 4000) {
                 start_status_query(hwnd);
             }
+            // the servers screen looks again every few seconds while it is open
+            if !app.is_null() && (*app).servers_view && !(*app).scanning && tick().wrapping_sub((*app).last_scan) >= 3000 {
+                start_scan(hwnd);
+            }
             0
         }
         WM_UPDATE_STATE => {
@@ -826,12 +992,24 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
             }
             0
         }
+        WM_SERVERS_FOUND => {
+            let app = app_ptr(hwnd);
+            if !app.is_null() {
+                (*app).scanning = false;
+                (*app).last_scan = tick();
+                if let Ok(found) = FOUND.lock() {
+                    (*app).servers = found.clone();
+                }
+                InvalidateRect(hwnd, std::ptr::null(), FALSE);
+            }
+            0
+        }
         WM_COMMAND => {
             let id = wp & 0xFFFF;
             let code = ((wp >> 16) & 0xFFFF) as u32;
             let app = app_ptr(hwnd);
             if id == IDOK {
-                if !app.is_null() && !(*app).saves_view {
+                if !app.is_null() && !(*app).saves_view && !(*app).servers_view {
                     try_launch(hwnd);
                 }
             } else if !app.is_null() && code == EN_CHANGE && (id == ID_ADDRESS || id == ID_PORT) {
@@ -876,7 +1054,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
         WM_ERASEBKGND => 1,
         WM_KEYDOWN => {
             let app = app_ptr(hwnd);
-            if wp as u32 == VK_RETURN && !app.is_null() && !(*app).saves_view {
+            if wp as u32 == VK_RETURN && !app.is_null() && !(*app).saves_view && !(*app).servers_view {
                 try_launch(hwnd);
             }
             0
@@ -933,7 +1111,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
                         PART_SERVER => try_open_server(hwnd),
                         PART_UPDATE => try_update(hwnd),
                         PART_NEW => start_game(hwnd, "new"),
+                        PART_LIST => show_servers(hwnd, &mut *app, true),
+                        PART_RESCAN => start_scan(hwnd),
+                        PART_BACK if (*app).servers_view => show_servers(hwnd, &mut *app, false),
                         PART_BACK => show_saves(hwnd, &mut *app, false),
+                        p if p >= PART_ROW => pick_server(hwnd, (p - PART_ROW) as usize),
                         p if p >= PART_DELETE => delete_slot(hwnd, (p - PART_DELETE) as usize),
                         p if p >= PART_SLOT => start_game(hwnd, &format!("slot{}", p - PART_SLOT + 1)),
                         _ => {}
