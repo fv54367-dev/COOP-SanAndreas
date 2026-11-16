@@ -122,6 +122,19 @@ pub struct PROCESS_INFORMATION {
     pub dwThreadId: DWORD,
 }
 
+#[repr(C)]
+#[derive(Default)]
+pub struct SYSTEMTIME {
+    pub wYear: WORD,
+    pub wMonth: WORD,
+    pub wDayOfWeek: WORD,
+    pub wDay: WORD,
+    pub wHour: WORD,
+    pub wMinute: WORD,
+    pub wSecond: WORD,
+    pub wMilliseconds: WORD,
+}
+
 // constants
 pub const FALSE: BOOL = 0;
 pub const TRUE: BOOL = 1;
@@ -134,6 +147,7 @@ pub const WS_MINIMIZEBOX: u32 = 0x00020000;
 pub const WS_CLIPCHILDREN: u32 = 0x02000000;
 pub const WM_CREATE: u32 = 0x0001;
 pub const WM_DESTROY: u32 = 0x0002;
+pub const WM_CLOSE: u32 = 0x0010;
 pub const WM_SIZE: u32 = 0x0005;
 pub const WM_SETCURSOR: u32 = 0x0020;
 pub const WM_PAINT: u32 = 0x000F;
@@ -363,6 +377,7 @@ extern "system" {
     pub fn CloseHandle(hObject: HANDLE) -> BOOL;
     pub fn GetLastError() -> DWORD;
     pub fn GetFileAttributesW(lpFileName: *const u16) -> DWORD;
+    pub fn GetLocalTime(lpSystemTime: *mut SYSTEMTIME);
     pub fn GetPrivateProfileStringW(
         lpAppName: *const u16,
         lpKeyName: *const u16,

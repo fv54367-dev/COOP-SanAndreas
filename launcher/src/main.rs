@@ -298,7 +298,7 @@ fn status_of(info: &Option<server::Info>) -> Status {
     }
 }
 
-// arrow = update pending: hand over to ACTUALIZAR.bat and exit; otherwise check again
+// arrow = update pending: install it here (update::start_install) and restart; otherwise check again
 unsafe fn try_update(hwnd: HWND) {
     let app = app_ptr(hwnd);
     if app.is_null() || (*app).launching || (*app).upd_state == update::CHECKING {
@@ -307,20 +307,45 @@ unsafe fn try_update(hwnd: HWND) {
     let (canal, text) = update::LAST.lock().map(|l| l.clone()).unwrap_or_default();
     if (*app).upd_state == update::PENDING {
         (*app).launching = true;
-        match update::run_updater(&canal) {
-            Ok(()) => {
-                DestroyWindow(hwnd);
-            }
-            Err(err) => {
-                (*app).launching = false;
-                message(hwnd, &err, MB_OK | MB_ICONERROR);
-            }
-        }
+        (*app).upd_state = update::INSTALLING;
+        InvalidateRect(hwnd, std::ptr::null(), FALSE);
+        update::start_install(hwnd, WM_UPDATE_STATE, canal);
         return;
     }
     if (*app).upd_state == update::UNKNOWN && !text.is_empty() {
         message(hwnd, &text, MB_OK | MB_ICONERROR);
     }
+    (*app).upd_state = update::CHECKING;
+    InvalidateRect(hwnd, std::ptr::null(), FALSE);
+    update::start_check(hwnd, WM_UPDATE_STATE);
+}
+
+// done: open the new launcher and exit; failed: offer ACTUALIZAR.bat, the old way
+unsafe fn install_finished(hwnd: HWND, ok: bool) {
+    let app = app_ptr(hwnd);
+    let text = update::LAST.lock().map(|l| l.1.clone()).unwrap_or_default();
+    if ok {
+        message(hwnd, &text, MB_OK | MB_ICONINFORMATION);
+        if let Err(err) = update::restart() {
+            message(hwnd, &err, MB_OK | MB_ICONERROR);
+        }
+        DestroyWindow(hwnd);
+        return;
+    }
+    let ask = format!("{}\n\n\u{bf}Probar con ACTUALIZAR.bat?", text);
+    if message(hwnd, &ask, MB_YESNO | MB_ICONERROR) == IDYES {
+        let canal = update::LAST.lock().map(|l| l.0.clone()).unwrap_or_default();
+        match update::run_updater(&canal) {
+            Ok(()) => {
+                DestroyWindow(hwnd);
+                return;
+            }
+            Err(err) => {
+                message(hwnd, &err, MB_OK | MB_ICONERROR);
+            }
+        }
+    }
+    (*app).launching = false;
     (*app).upd_state = update::CHECKING;
     InvalidateRect(hwnd, std::ptr::null(), FALSE);
     update::start_check(hwnd, WM_UPDATE_STATE);
@@ -586,8 +611,8 @@ unsafe fn paint_update(hdc: HDC, app: &App, cr: &RECT) {
     SelectObject(hdc, old_pen);
     DeleteObject(pen);
 
-    // hover hint to the left of the square
-    if app.hover == PART_UPDATE {
+    // hint to the left of the square: on hover, and always while installing
+    if app.hover == PART_UPDATE || app.upd_state == update::INSTALLING {
         let text = match app.upd_state {
             update::CHECKING => "Buscando actualizaciones...".to_string(),
             _ => update::LAST.lock().map(|l| l.1.clone()).unwrap_or_default(),
@@ -773,6 +798,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
             if !app.is_null() {
                 (*app).upd_state = wp;
                 InvalidateRect(hwnd, std::ptr::null(), FALSE);
+                if wp == update::INSTALLED || wp == update::FAILED {
+                    install_finished(hwnd, wp == update::INSTALLED);
+                }
+            }
+            0
+        }
+        // no closing halfway through an install
+        WM_CLOSE => {
+            let app = app_ptr(hwnd);
+            if app.is_null() || (*app).upd_state != update::INSTALLING {
+                DestroyWindow(hwnd);
             }
             0
         }
@@ -923,6 +959,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
 
 fn main() {
     unsafe {
+        update::remove_old();
         let hinstance = GetModuleHandleW(std::ptr::null());
         let class_name = wide("CoopSA");
         let mut wc: WNDCLASSW = std::mem::zeroed();
