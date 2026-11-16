@@ -18,6 +18,7 @@
 // the temporary patches of CPatch.cpp use. CPopulation::PedDensityMultiplier is in the sdk.
 static constexpr uintptr_t ADDR_CAR_DENSITY = 0x8A5B20;
 static constexpr uintptr_t ADDR_EMERGENCY_ALLOWED = 0x8A5B28;
+static constexpr int FINISH_SCORE_BASE = 90000000;
 
 bool CVsRace::IsActive()
 {
@@ -48,13 +49,14 @@ void CVsRace::Enter()
 
 void CVsRace::Exit()
 {
-    // tell the others this racer is out, so they stop ranking him (state 2)
+    // tell the others this racer is out (state 2: disqualified or left, struck out on their board); one that crossed the line
+    // stays finished with his time
     if (CNetwork::m_bAuthenticated && ms_nLastSendTick != 0)
     {
         Packets::Scripts::MinigameVsScore packet{};
         packet.gameId = PROGRESS_GAME_ID;
-        packet.score = ms_nLocalScore;
-        packet.state = 2;
+        packet.score = ms_nLocalState == 1 ? FINISH_SCORE_BASE + ms_nLocalFinishSeconds : ms_nLocalScore;
+        packet.state = ms_nLocalState == 1 ? 1 : 2;
         GetPacketFactory().Send(packet);
     }
     ms_nLastSendTick = 0;
@@ -337,8 +339,6 @@ void CVsRace::HideNpcRacersAndSeparate()
     }
 }
 
-static constexpr int FINISH_SCORE_BASE = 90000000;
-
 // local variables of the running mission script (n@ is index n, see ESTADO.md)
 static int ScriptLvar(int n)
 {
@@ -404,15 +404,18 @@ void CVsRace::UpdateProgress()
     if (now - ms_nLastSendTick >= 250)
     {
         ms_nLastSendTick = now;
-        Packets::Scripts::MinigameVsScore packet{};
-        packet.gameId = PROGRESS_GAME_ID;
-        // a finished racer sends his time instead of the progress (the receivers rank the finished ones by arrival)
-        packet.score = ms_nLocalState == 1 ? FINISH_SCORE_BASE + ms_nLocalFinishSeconds : ms_nLocalScore;
-        packet.state = ms_nLocalState;
-        GetPacketFactory().Send(packet);
+        if (ms_bActive)
+        {
+            Packets::Scripts::MinigameVsScore packet{};
+            packet.gameId = PROGRESS_GAME_ID;
+            // a finished racer sends his time instead of the progress (the receivers rank the finished ones by arrival)
+            packet.score = ms_nLocalState == 1 ? FINISH_SCORE_BASE + ms_nLocalFinishSeconds : ms_nLocalScore;
+            packet.state = ms_nLocalState;
+            GetPacketFactory().Send(packet);
+        }
 
-        // VS with NPCs: the owner's NPC racers, for everybody's board (and his own)
-        if (CVsLobby::WithNpcs() && CVsLobby::IsOwnerLocal())
+        // VS with NPCs: the owner's NPC racers, for everybody's board (and his own); alone: the race's NPCs, this board only
+        if ((ms_bActive && CVsLobby::WithNpcs() && CVsLobby::IsOwnerLocal()) || ms_bSoloBoard)
         {
             const int racers = (std::min)(ScriptLvar(256), (int)NPC_SLOTS);
             for (int i = 0; i < racers; ++i)
@@ -432,6 +435,8 @@ void CVsRace::UpdateProgress()
                     d = 9998.0f;
                 const int score = (nLap * 100 + nCp) * 10000 + (9999 - static_cast<int>(d));
                 NoteNpc(CNetworkPlayerManager::m_localPlayerId.value(), i, score, bDone ? 1 : 0);
+                if (!ms_bActive)
+                    continue;
                 Packets::Scripts::MinigameVsScore npcPacket{};
                 npcPacket.gameId = static_cast<uint8_t>(NPC_GAME_ID + i);
                 npcPacket.score = score;
@@ -445,7 +450,8 @@ void CVsRace::UpdateProgress()
     int place = 1, players = 1;
     for (const SRacer& racer : ms_vRacers)
     {
-        if (racer.state == 2 || now - racer.lastTick > 5000)
+        // a finished racer stops sending once his race ends: he keeps his place
+        if (racer.state == 2 || (racer.state == 0 && now - racer.lastTick > 5000))
             continue;
 
         players++;
@@ -463,7 +469,8 @@ void CVsRace::UpdateProgress()
     ms_nHudLap = (std::min)(lap + 1, laps);
     ms_nHudLaps = laps;
     ms_nHudSeconds = ScriptLvar(451);
-    ms_bHudActive = players > 1;
+    // the board stays for the whole race once somebody raced against us, also when the others are disqualified or left
+    ms_bHudActive = players > 1 || !ms_vRacers.empty() || ms_bSoloBoard;
 }
 
 void CVsRace::OnProgress(const Packets::Scripts::MinigameVsScore& packet)
@@ -597,7 +604,7 @@ void CVsRace::DrawHud()
 // CHighStakesRace does (8-Track and the other VS races, 2026-11-15). The results screen (stage 13) stays.
 void CVsRace::HideNativeHud()
 {
-    if (!CConfigLoader::ms_bVsRaceBoard || !ms_bActive || FindRaceScript() == nullptr)
+    if (!CConfigLoader::ms_bVsRaceBoard || !(ms_bActive || ms_bSoloBoard) || FindRaceScript() == nullptr)
         return;
     const int stage = ScriptLvar(49);
     if (stage < 7 || stage >= 13)
@@ -647,7 +654,7 @@ int CVsRace::DropScriptRacePanel()
 // the live standings, drawn like CHighStakesRace's board (CFont, 640x448 virtual screen) above the position panel
 void CVsRace::DrawBoard()
 {
-    if (!CConfigLoader::ms_bVsRaceBoard || !ShouldDrawHud())
+    if (!CConfigLoader::ms_bVsRaceBoard || !(ShouldDrawHud() || (ms_bSoloBoard && ms_bHudActive)))
         return;
 
     struct SRow
@@ -658,22 +665,25 @@ void CVsRace::DrawBoard()
         int score;
         bool local;
         bool npc = false;
+        bool out = false;  // disqualified or left (state 2, or a racer silent for 5 s): last, struck out in red
     };
     std::vector<SRow> rows;
-    rows.push_back({CLocalPlayer::m_Name, ms_nLocalState == 1, ms_nLocalFinishTick, ms_nLocalScore, true});
+    rows.push_back({CLocalPlayer::m_Name[0] != '\0' ? CLocalPlayer::m_Name : "Vos", ms_nLocalState == 1, ms_nLocalFinishTick,
+        ms_nLocalScore, true});
     const uint32_t now = GetTickCount();
     for (const SRacer& racer : ms_vRacers)
     {
-        if (racer.state == 2 || now - racer.lastTick > 5000)
-            continue;
         std::string name = "Jugador " + std::to_string(racer.id);
         for (auto pNetworkPlayer : CNetworkPlayerManager::m_pPlayers)
             if (pNetworkPlayer && pNetworkPlayer->m_playerId.value() == racer.id && !pNetworkPlayer->GetName().empty())
                 name = pNetworkPlayer->GetName();
-        rows.push_back({name, racer.state == 1, racer.finishTick, racer.score, false});
+        SRow row{name, racer.state == 1, racer.finishTick, racer.score, false};
+        row.out = racer.state == 2 || (racer.state == 0 && now - racer.lastTick > 5000);
+        rows.push_back(row);
     }
-    // VS with NPCs: the owner's NPC racers ("Corredor N" by their slot, like High Stakes' board)
-    if (CVsLobby::WithNpcs())
+    // VS with NPCs: the owner's NPC racers ("Corredor N" by their slot, like High Stakes' board); alone: the race's own ones.
+    // VS against the players only has no NPC rows (HideNpcRacersAndSeparate takes them out of the race)
+    if (CVsLobby::WithNpcs() || ms_bSoloBoard)
     {
         std::vector<const SNpc*> npcs;
         for (const SNpc& npc : ms_vNpcs)
@@ -689,6 +699,8 @@ void CVsRace::DrawBoard()
     }
     std::stable_sort(rows.begin(), rows.end(), [](const SRow& a, const SRow& b)
         {
+            if (a.out != b.out)
+                return b.out;
             if (a.finished != b.finished)
                 return a.finished;
             return a.finished ? a.tick < b.tick : a.score > b.score;
@@ -731,12 +743,21 @@ void CVsRace::DrawBoard()
         char left[48], right[16];
         sprintf_s(left, "%d. %s", i + 1, CMissionHints::ToGameText(r.name).c_str());
         // progress = (lap * 100 + checkpoint) * 10000 + ... (UpdateProgress)
-        if (r.finished) sprintf_s(right, "META");
+        if (r.out) sprintf_s(left, "- %s", CMissionHints::ToGameText(r.name).c_str());
+        if (r.out) sprintf_s(right, "DQ");
+        else if (r.finished) sprintf_s(right, "META");
         else sprintf_s(right, "V%d", (std::min)(r.score / 1000000 + 1, (std::max)(ms_nHudLaps, 1)));
-        CFont::SetColor(r.local ? CRGBA(172, 203, 241, 255) : r.npc ? CRGBA(160, 160, 160, 255) : CRGBA(225, 225, 225, 255));
+        CFont::SetColor(r.out ? CRGBA(210, 45, 45, 255) : r.local ? CRGBA(172, 203, 241, 255) : r.npc ? CRGBA(160, 160, 160, 255) : CRGBA(225, 225, 225, 255));
         const float y = y1 + titleH + i * lineH;
         CFont::PrintString(x1 + pad, y, left);
         CFont::PrintString(x2 - 38.0f * sx, y, right);
+        if (r.out)
+        {
+            // the strike: a red line through the name, drawn with the text buffer of this row
+            const float width = CFont::GetStringWidth(left, true, false);
+            CFont::RenderFontBuffer();
+            CSprite2d::DrawRect(CRect(x1 + pad, y + 7.0f * sy, x1 + pad + width, y + 8.5f * sy), CRGBA(210, 45, 45, 255));
+        }
     }
     CFont::RenderFontBuffer();
 }
@@ -756,6 +777,7 @@ void CVsRace::DrawResults(ImDrawList* dl, ImFont* font, const ImVec2& size)
         uint32_t tick;
         int score;
         bool local;
+        bool out = false;
     };
     std::vector<SRow> rows;
 
@@ -765,21 +787,22 @@ void CVsRace::DrawResults(ImDrawList* dl, ImFont* font, const ImVec2& size)
     const uint32_t now = GetTickCount();
     for (const SRacer& racer : ms_vRacers)
     {
-        if (racer.state == 2 || now - racer.lastTick > 5000)
-            continue;
-
         std::string name = "Jugador " + std::to_string(racer.id);
         for (auto pNetworkPlayer : CNetworkPlayerManager::m_pPlayers)
         {
             if (pNetworkPlayer && pNetworkPlayer->m_playerId.value() == racer.id && !pNetworkPlayer->GetName().empty())
                 name = pNetworkPlayer->GetName();
         }
-        rows.push_back({name, racer.state == 1, racer.finishSeconds, racer.finishTick, racer.score, false});
+        SRow row{name, racer.state == 1, racer.finishSeconds, racer.finishTick, racer.score, false};
+        row.out = racer.state == 2 || (racer.state == 0 && now - racer.lastTick > 5000);
+        rows.push_back(row);
     }
 
-    // finished first by arrival (ties by time), the others by progress; stable for any number of racers (3-4 players)
+    // finished first by arrival (ties by time), the others by progress, the disqualified last; stable for 3-4 players
     std::stable_sort(rows.begin(), rows.end(), [](const SRow& a, const SRow& b)
         {
+            if (a.out != b.out)
+                return b.out;
             if (a.finished != b.finished)
                 return a.finished;
             if (a.finished)
@@ -803,13 +826,21 @@ void CVsRace::DrawResults(ImDrawList* dl, ImFont* font, const ImVec2& size)
     for (size_t i = 0; i < rows.size(); i++)
     {
         const SRow& row = rows[i];
-        if (row.finished)
+        if (row.out)
+            snprintf(buf, sizeof(buf), "- %s   descalificado", row.name.c_str());
+        else if (row.finished)
             snprintf(buf, sizeof(buf), "%d. %s   %d:%02d", (int)i + 1, row.name.c_str(), row.seconds / 60, row.seconds % 60);
         else
             snprintf(buf, sizeof(buf), "%d. %s   corriendo...", (int)i + 1, row.name.c_str());
 
-        dl->AddText(font, fs, ImVec2(x0 + fs * 0.6f, y0 + lineH * (1.2f + i)),
-            row.local ? IM_COL32(201, 166, 255, 255) : IM_COL32(255, 255, 255, 255), buf);
+        const ImVec2 at(x0 + fs * 0.6f, y0 + lineH * (1.2f + i));
+        const ImU32 color = row.out ? IM_COL32(210, 45, 45, 255) : row.local ? IM_COL32(201, 166, 255, 255) : IM_COL32(255, 255, 255, 255);
+        dl->AddText(font, fs, at, color, buf);
+        if (row.out)
+        {
+            const float nameW = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, ("- " + row.name).c_str()).x;
+            dl->AddLine(ImVec2(at.x, at.y + fs * 0.55f), ImVec2(at.x + nameW, at.y + fs * 0.55f), color, 1.5f * sy);
+        }
     }
 }
 
@@ -829,10 +860,25 @@ void CVsRace::Process()
         }
     }
 
+    // once started it lasts until the local race ends: a disqualified or gone rival no longer brings the game's old panel back
+    const bool bLocalRace = !CHighStakesRace::Active() && CNetwork::m_bAuthenticated &&
+        IsRaceMissionId(CMissionMirror::GetRunningMissionId());
     if (bVs && !ms_bActive)
         Enter();
-    else if (!bVs && ms_bActive)
+    else if (!bLocalRace && ms_bActive)
         Exit();
+
+    // the board in every race (the user, 16-11): alone against the NPCs it ranks them and the local player
+    const bool bSolo = !ms_bActive && CConfigLoader::ms_bVsRaceBoard && !CHighStakesRace::Active() &&
+        IsRaceMissionId(CMissionMirror::GetRunningMissionId());
+    if (bSolo != ms_bSoloBoard)
+    {
+        ms_bSoloBoard = bSolo;
+        ms_bHudActive = false;
+        ms_vNpcs.clear();
+        ms_nLocalState = 0;
+        ms_nLastSendTick = 0;
+    }
 
     if (ms_bActive)
     {
@@ -840,6 +886,8 @@ void CVsRace::Process()
         HideNpcRacersAndSeparate();
         UpdateProgress();
     }
+    else if (ms_bSoloBoard)
+        UpdateProgress();
 }
 
 void CVsRace::Init()

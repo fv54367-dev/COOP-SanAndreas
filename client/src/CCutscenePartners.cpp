@@ -614,6 +614,9 @@ void CCutscenePartners::Render() {
         return;
     }
     // T48 keeps the viewer's own CJ: in that viewer's extra slot, show the owner instead.
+    // cutscene-show-others off: the copies are still held (out of the way) but always hidden on this screen.
+    coop::scene::Spot hiddenSpot; hiddenSpot.pose=coop::scene::POSE_HIDDEN;
+    const bool showOthers=CConfigLoader::ms_bCutsceneShowOthers;
     std::set<playerid_t> included;
     for(int rank=0;rank<current.count;++rank) {
         auto id=current.partners[rank];
@@ -629,11 +632,11 @@ void CCutscenePartners::Render() {
         else { Restore(); return; }
         if (!_strnicmp(CCutsceneMgr::ms_cutsceneName,"SWEET2B",8)) {
             auto slot=current.partners[rank];
-            if (!DecorateRide(slot,ped,rank)) {
+            if (!showOthers || !DecorateRide(slot,ped,rank)) {
                 coop::scene::Spot hidden; hidden.pose=coop::scene::POSE_HIDDEN;
                 coop::scene::Hold(reinterpret_cast<scene_game::CPed*>(ped),hidden);
             }
-        } else coop::scene::Hold(reinterpret_cast<scene_game::CPed*>(ped),coop::scene::ForRank(s,rank));
+        } else coop::scene::Hold(reinterpret_cast<scene_game::CPed*>(ped),showOthers ? coop::scene::ForRank(s,rank) : hiddenSpot);
     }
     for(auto& [id,state]:saved) if(!included.count(id)) { Restore(); break; }
 }

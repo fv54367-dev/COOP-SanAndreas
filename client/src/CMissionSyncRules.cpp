@@ -2384,6 +2384,24 @@ static void ProcessRobbingUncleSamGuestCars()
     ParkGuestVehiclesWhenCreated(active, parked, 414, CVector(2475.9f, -1679.6f, 12.3f), "robbing-uncle-sam");
 }
 
+// GUNS1 "Home Invasion" (coop-home-invasion): the BOXBURG (609) seats the host, Ryder and two more; when more guests come
+// than those free seats (4 players: 3 guests) ONE Greenwood is parked by it for all of them (asked 2026-11-16)
+static void ProcessHomeInvasionGuestCars()
+{
+    static CRunningScript* attempt = nullptr;
+    static bool parked = false;
+    CRunningScript* active = nullptr;
+    if (CConfigLoader::ms_bCoopHomeInvasion && CConfigLoader::ms_bVanillaScripts &&
+        CMissionSyncRules::IsEnabled() && CNetwork::m_bConnected &&
+        !COpCodeSync::bProcessingNetworkOpcode && CCoopMission::IsScriptAuthority())
+        for (auto script = CTheScripts::pActiveScripts; script; script = script->m_pNext)
+            if (script->m_bIsMission && !_strnicmp(script->m_szName, "GUNS1", 8) &&
+                COpCodeSync::IsScriptSynced(script)) active = script;
+    if (!active || active != attempt) parked = false;
+    attempt = active;
+    ParkGuestVehiclesWhenCreated(active, parked, 609, CVector(2476.68f, -1679.57f, 12.35f), "home-invasion");
+}
+
 // SWEET3 "Drive-Thru" (mission-drive-thru-first-car): the Greenwood of the first leg (Grove to the Cluckin' Bell) is made
 // before the opening cutscene; the guests' car is parked next to it as soon as the cutscene is over, like Drive-By
 // (the second car, after the Cluckin' Bell cutscene, is made by OnDriveThruCarHeadingSet)
@@ -3043,6 +3061,7 @@ void CMissionSyncRules::Process()
     ProcessLosSepulcrosGuestCars();
     ProcessManagementPier();
     ProcessRobbingUncleSamGuestCars();
+    ProcessHomeInvasionGuestCars();
     ProcessDriveThruGuestCars();
     ProcessCatalystGuestCars();
     ProcessRunningDogGuestCars();

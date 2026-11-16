@@ -159,6 +159,7 @@ void CConfigLoader::Load()
     ms_bGarageSync = readBool("garage-sync");
     ms_bCoopMissionMachines = readBool("coop-mission-machines");
     ms_bCutscenePartners = readBool("cutscene-partners");
+    ms_bCutsceneShowOthers = readBool("cutscene-show-others");
     ms_bSceneGuestsVisible = readBool("scene-guests-visible");
     ms_bCutscenePartnerSmooth = readBool("cutscene-partner-smooth");
     ms_bJustBusinessBikeEscort = readBool("just-business-bike-escort");
@@ -400,6 +401,8 @@ void CConfigLoader::Save()
         CONFIG_SECTION.c_str(), "clear-messages", ms_bClearMessages ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "gps-route", ms_bGpsRoute ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "cutscene-show-others", ms_bCutsceneShowOthers ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "hud-hide-all-f2", ms_bHudHideAllF2 ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "camera-mirror-interior-guard",

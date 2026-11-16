@@ -80,6 +80,9 @@ private:
     static inline uint32_t ms_nLastSendTick = 0;
 
     static inline bool ms_bActive = false;
+    // vs-race-board in a race nobody else runs: the same board with the local player and the race's own NPC racers, computed
+    // here and never sent (the game's position panel goes as in a VS race)
+    static inline bool ms_bSoloBoard = false;
     static inline uint32_t ms_nLastClearTick = 0;
     static inline float ms_fPedDensity = 1.0f;
     static inline float ms_fCarDensity = 1.0f;

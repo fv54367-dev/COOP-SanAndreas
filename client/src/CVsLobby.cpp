@@ -82,10 +82,10 @@ bool IsStillInPlayers(playerid_t id)
     return CNetworkPlayerManager::GetPlayer(id) != nullptr;
 }
 
-// number row key pressed this frame: 1 / 2 / 3 choose (the user, 14-11: no Y / N)
+// number row key pressed this frame: 1 / 2 / 3 choose (the user, 14-11: no Y / N), 4 leaves the marker
 bool KeyJustDown(int key)
 {
-    static bool down[3]{};
+    static bool down[4]{};
     bool& was = down[key - '1'];
     const bool now = CTestMode::IsGameWindowFocused() && (GetAsyncKeyState(key) & 0x8000) != 0;
     const bool pressed = now && !was;
@@ -272,6 +272,13 @@ void CVsLobby::Process()
         const bool bNpcs = KeyJustDown('1');
         const bool bPlayers = KeyJustDown('2');
         const bool bAlone = KeyJustDown('3');
+        // 4: walked into the marker by mistake, the race script goes back to its own exit (the user, 16-11)
+        if (KeyJustDown('4'))
+        {
+            CChat::AddMessage("{c7a6ff}[Coop]{d6dce8} Saliste del marcador de la carrera.");
+            ms_eRole = ROLE_ABORT;
+            break;
+        }
         if (bPlayers || bNpcs)
         {
             ms_nMode = bNpcs ? 1 : 0;
@@ -302,6 +309,13 @@ void CVsLobby::Process()
 
     case ROLE_WAITING:
     {
+        if (!IsMenuOrChatOpen() && KeyJustDown('4'))
+        {
+            CChat::AddMessage("{c7a6ff}[Coop]{d6dce8} Cancelaste la carrera VS y saliste del marcador.");
+            Send(Packets::Scripts::RaceVsLobby::CANCEL);
+            ms_eRole = ROLE_ABORT;
+            break;
+        }
         int nInvited = 0, nAccepted = 0, nArrived = 0;
         for (auto& guest : ms_vGuests)
         {
@@ -400,6 +414,14 @@ void CVsLobby::Process()
         if (!IsStillInPlayers(ms_ownerId))
         {
             ms_eRole = ROLE_GUEST_GO;  // the owner left: the race goes on alone
+            break;
+        }
+        if (!IsMenuOrChatOpen() && KeyJustDown('4'))
+        {
+            // the owner counts him out as if he had said no
+            CChat::AddMessage("{c7a6ff}[Coop]{d6dce8} Saliste del marcador de la carrera.");
+            Send(Packets::Scripts::RaceVsLobby::DECLINE);
+            ms_eRole = ROLE_ABORT;
             break;
         }
         if (ms_pScript != nullptr)
@@ -600,6 +622,7 @@ void CVsLobby::Draw()
         ImGui::TextUnformatted("1 = VS contra jugadores y NPC");
         ImGui::TextUnformatted("2 = VS solo contra jugadores");
         ImGui::TextUnformatted("3 = solo contra NPC");
+        ImGui::TextUnformatted("4 = salir del marcador");
         break;
 
     case ROLE_WAITING:
@@ -613,6 +636,7 @@ void CVsLobby::Draw()
                                                                   : "no viene";
             ImGui::Text("%s: %s", PlayerName(guest.id).c_str(), szState);
         }
+        ImGui::TextUnformatted("4 = cancelar y salir del marcador");
         break;
     }
 
@@ -628,6 +652,7 @@ void CVsLobby::Draw()
 
     case ROLE_GUEST_ARRIVED:
         ImGui::TextColored(accent, "Esperando que %s arranque la carrera...", PlayerName(ms_ownerId).c_str());
+        ImGui::TextUnformatted("4 = salir del marcador");
         break;
 
     case ROLE_OWNER_COUNTDOWN:

@@ -523,9 +523,10 @@ int CCommandPutNetworkPlayersInCar::ParkSharedGuestCar(CVehicle* vehicle, CRunni
     const bool driveThru = strcmp(rule, "drive-thru") == 0;
     const bool tripSkip = strcmp(rule, "trip-skip") == 0;
     const bool catalyst = strcmp(rule, "catalyst") == 0;
+    const bool homeInvasion = strcmp(rule, "home-invasion") == 0;
     const bool bike = perVehicle == 2 || (tracks && vehicle->m_nModelIndex == 468) ||
         (business && vehicle->m_nModelIndex == 581) || (maddDogg && vehicle->m_nModelIndex == 510);
-    const bool* enabled = catalyst ? &CConfigLoader::ms_bMissionCatalystGuestCar : tripSkip ? &CConfigLoader::ms_bMissionTripSkipGuests :
+    const bool* enabled = homeInvasion ? &CConfigLoader::ms_bCoopHomeInvasion : catalyst ? &CConfigLoader::ms_bMissionCatalystGuestCar : tripSkip ? &CConfigLoader::ms_bMissionTripSkipGuests :
         countryside ? &CConfigLoader::ms_bCoopCountryside : boarding ? &CConfigLoader::ms_bMissionBoardingSharedCar : greenSabre ? &CConfigLoader::ms_bCoopGreenSabre : maddDogg ? &CConfigLoader::ms_bCoopMaddDogg : management ? &CConfigLoader::ms_bCoopManagementIssues : uncleSam ? &CConfigLoader::ms_bCoopRobbingUncleSam : business ? &CConfigLoader::ms_bCoopJustBusiness : tracks ? &CConfigLoader::ms_bCoopWrongSideTracks :
         runningDog ? &CConfigLoader::ms_bCoopRunningDog : sepulcros ? &CConfigLoader::ms_bCoopLosSepulcros :
         driveBy ? &CConfigLoader::ms_bCoopDriveBy : waitForHost ? &CConfigLoader::ms_bMissionOgLocBikes :
@@ -535,7 +536,7 @@ int CCommandPutNetworkPlayersInCar::ParkSharedGuestCar(CVehicle* vehicle, CRunni
     // or bikes of two.
     const bool fewest = !waitForHost && perVehicle == 1 &&
         (driveBy || sepulcros || runningDog || tracks || business || uncleSam || management || greenSabre || boarding || countryside ||
-         tripSkip || catalyst || (driveThru && CConfigLoader::ms_bMissionDriveThruFirstCar));
+         tripSkip || catalyst || homeInvasion || (driveThru && CConfigLoader::ms_bMissionDriveThruFirstCar));
     const bool hostSeats = fewest && !bike && (runningDog || tracks || business || management || greenSabre) &&
         CNetworkVehicleManager::GetVehicle(vehicle);
     int model = vehicle->m_nModelIndex;
@@ -544,6 +545,8 @@ int CCommandPutNetworkPlayersInCar::ParkSharedGuestCar(CVehicle* vehicle, CRunni
         perVehicle = bike ? 2 : 3;
         if (catalyst)
             perVehicle = (std::min)(3, 1 + (int)vehicle->m_nMaxPassengers);  // the mission's own model, as many as it seats
+        else if (homeInvasion)
+            model = FOUR_DOOR_GUEST_MODEL;  // a Greenwood, not a second van
         else if (!bike && (vehicle->m_nMaxPassengers < 3 ||
                            ((boarding || tripSkip) && vehicle->m_nVehicleSubType != VEHICLE_AUTOMOBILE)))
             model = FOUR_DOOR_GUEST_MODEL;
@@ -557,12 +560,19 @@ int CCommandPutNetworkPlayersInCar::ParkSharedGuestCar(CVehicle* vehicle, CRunni
             (!s_pOnlyGuests || std::find(s_pOnlyGuests->begin(), s_pOnlyGuests->end(), player->m_playerId) != s_pOnlyGuests->end()) &&
             player->m_pPed->m_nAreaCode == vehicle->m_nAreaCode && CCoopMission::ShouldIncludeNetworkPlayer(player) &&
             (!(driveBy || sepulcros || runningDog || tracks || business || uncleSam || maddDogg || management || greenSabre || boarding ||
-                 countryside || tripSkip || catalyst || (driveThru && fewest)) || tripSkip || (parkOnly || board
+                 countryside || tripSkip || catalyst || homeInvasion || (driveThru && fewest)) || tripSkip || (parkOnly || board
                 ? ((!player->m_pPed->m_nPedFlags.bInVehicle || (board && IsParkedCopy(player->m_pPed->m_pVehicle))) &&
                    DistanceBetweenPoints(player->m_pPed->GetPosition(), vehicle->GetPosition()) <= 300.0f)
                 : (!player->m_pPed->m_nPedFlags.bInVehicle &&
                    DistanceBetweenPoints(player->m_pPed->GetPosition(), vehicle->GetPosition()) <= 120.0f))))
             guests.push_back(player);
+    // Home Invasion: the guests that fit in the van's free seats (all but Ryder's) ride in it, no car for them
+    if (homeInvasion && (int)guests.size() <= (std::max)(0, (int)vehicle->m_nMaxPassengers - 1))
+    {
+        CMissionMirror::LogEventf("rule-guest-vehicle case=%s guests=%d seats=%d vehicles=0", rule, (int)guests.size(),
+            (int)vehicle->m_nMaxPassengers - 1);
+        return 0;
+    }
     const float carOffsets[][2] = {{6,0},{9,0},{0,4},{0,-4},{6,4},{6,-4},{9,4},{9,-4}};
     const float bikeOffsets[][2] = {{0,3},{0,-3},{4,3},{4,-3},{7,0},{7,3},{7,-3},{10,0}};
     const CVector avoid(2411.31f, -1928.84f, 0.0f);

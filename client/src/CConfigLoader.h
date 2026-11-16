@@ -232,6 +232,9 @@ public:
     static inline bool ms_bCoopMissionMachines = true;
     static inline bool ms_bActivityChallenge = true;
     static inline bool ms_bCutscenePartners = true;
+    // cutscene-show-others (F1, local): false = this viewer sees only its own CJ in cutscenes, the other players' copies
+    // stay hidden; the partner snapshot still goes out, so the others see them as they choose
+    static inline bool ms_bCutsceneShowOthers = true;
     static inline bool ms_bSceneGuestsVisible = true;
     static inline bool ms_bCutscenePartnerSmooth = true;
     static inline bool ms_bJustBusinessBikeEscort = true;

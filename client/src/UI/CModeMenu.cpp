@@ -72,6 +72,12 @@ void CModeMenu::Draw()
         CConfigLoader::Save();
 
     ImGui::Separator();
+    int cutsceneCjs = CConfigLoader::ms_bCutsceneShowOthers ? 1 : 0;
+    ImGui::TextUnformatted("Cinematicas (solo en tu pantalla):");
+    if (ImGui::RadioButton("Un solo CJ (solo vos)", cutsceneCjs == 0)) { CConfigLoader::ms_bCutsceneShowOthers = false; CConfigLoader::Save(); }
+    if (ImGui::RadioButton("Varios CJ (vos y los demas jugadores)", cutsceneCjs == 1)) { CConfigLoader::ms_bCutsceneShowOthers = true; CConfigLoader::Save(); }
+
+    ImGui::Separator();
     ImGui::TextUnformatted("Cooperativo: para iniciar hace falta que los demas jugadores en coop esten en el marcador.");
     ImGui::TextUnformatted("Individual: inicias vos solo; los demas no se enteran.");
 
