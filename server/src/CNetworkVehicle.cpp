@@ -1,0 +1,76 @@
+#include "stdafx.h"
+#include <network/packets/vehicles.h>
+
+CNetworkVehicle::CNetworkVehicle(vehicleid_t vehicleid, unsigned short model, CVector pos, float rot)
+{
+    m_vehicleId = vehicleid;
+    m_nModelId = model;
+    m_vecPosition = pos;
+    m_vecRotation = CVector(0, 0, 0);
+}
+
+void CNetworkVehicle::ReassignSyncer(CNetworkPlayer* newSyncer)
+{
+    if (m_pSyncer != newSyncer)
+    {
+        Packets::Vehicles::AssignVehicleSyncer packet{};
+        packet.vehicleid = m_vehicleId;
+
+        // send to the old vehicle syncer
+        if (m_pSyncer)
+        {
+            packet.syncing = false;
+            GetPacketFactory().Send(packet, m_pSyncer);
+        }
+
+        // send to the new
+        packet.syncing = true;
+        GetPacketFactory().Send(packet, newSyncer);
+
+        m_pSyncer = newSyncer;
+    }
+}
+
+void CNetworkVehicle::SetOccupant(int8_t seatid, CNetworkPlayer* player)
+{
+    if (seatid < 0 || seatid > 7)
+        return;
+
+    // a player sits in one seat only: leave the previous one (another seat or another vehicle)
+    if (player && (player->m_vehicleId != this->m_vehicleId || player->m_nSeatId != seatid))
+        player->RemoveFromVehicle();
+
+    if (this->m_pPlayers[seatid])
+    {
+        this->m_pPlayers[seatid]->m_vehicleId = vehicleid_t();
+        this->m_pPlayers[seatid]->m_nSeatId = -1;
+    }
+
+    this->m_pPlayers[seatid] = player;
+
+    if (player)
+    {
+        player->m_vehicleId = this->m_vehicleId;
+        player->m_nSeatId = seatid;
+    }
+}
+
+bool CNetworkVehicle::IsSeatTakenByOther(int8_t seatid, CNetworkPlayer* player) const
+{
+    if (seatid < 0 || seatid > 7)
+        return false;
+
+    return m_pPlayers[seatid] != nullptr && m_pPlayers[seatid] != player;
+}
+
+void CNetworkVehicle::SyncToOccupant()
+{
+    for (int seatid = 0; seatid < 8; seatid++)
+    {
+        if (m_pPlayers[seatid] != nullptr)
+        {
+            ReassignSyncer(m_pPlayers[seatid]);
+            return;
+        }
+    }
+}

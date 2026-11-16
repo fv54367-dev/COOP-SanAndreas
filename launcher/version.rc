@@ -1,0 +1,46 @@
+// CoopSA launcher resources: version info, icon and embedded manifest.
+// ASCII within code page 1252 (project rule).
+
+LANGUAGE 0x09, 0x01
+#pragma code_page(1252)
+
+1 VERSIONINFO
+ FILEVERSION 0,4,44,0
+ PRODUCTVERSION 0,4,44,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x0L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040004b0"
+        BEGIN
+            VALUE "CompanyName", "CoopSA"
+            VALUE "FileDescription", "Modo cooperativo para GTA San Andreas"
+            VALUE "FileVersion", "0.4.44.0"
+            VALUE "InternalName", "COOP San Andreas"
+            VALUE "LegalCopyright", "CoopSA (C) 2026"
+            VALUE "OriginalFilename", "CoopSA.exe"
+            VALUE "ProductName", "CoopSA"
+            VALUE "ProductVersion", "0.4.44-alpha"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x400, 1200
+    END
+END
+
+101 BITMAP "coopsa-logo.bmp"
+
+// application icon
+1 ICON "icon.ico"
+
+// embedded manifest (also copied next to the exe for tools that expect it)
+1 24 "CoopSA.exe.manifest"

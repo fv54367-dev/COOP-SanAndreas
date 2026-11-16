@@ -1,0 +1,47 @@
+#include "stdafx.h"
+#include "PlayerHooks.h"
+#include "VehicleHooks.h"
+#include "TaskHooks.h"
+#include "WorldHooks.h"
+#include "PedHooks.h"
+#include "GameHooks.h"
+#include "StatsHooks.h"
+#include "CrashfixHooks.h"
+#include "MissionAudioHooks.h"
+#include "Commands/CommandHooks.h"
+#include "SaveLoadHooks.h"
+#include "RadarHooks.h"
+#include "ProjectileHooks.h"
+#include "DamageHooks.h"
+#include "ShadowHooks.h"
+#include "CCarPedGenHooks.h"
+#include "CSpawnWatch.h"
+#include "CutsceneClothesHooks.h"
+#include "CMissionAreaMarkers.h"
+#include "CMissionSyncRules.h"
+
+void CHook::Init()
+{
+    CDriveBy::InitHooks();
+    VehicleHooks::InjectHooks();
+    PlayerHooks::InjectHooks();
+    TaskHooks::InjectHooks();
+    WorldHooks::InjectHooks();
+    PedHooks::InjectHooks();
+    GameHooks::InjectHooks();
+    StatsHooks::InjectHooks();
+    CommandHooks::InjectHooks();
+    CrashfixHooks::InjectHooks();
+    MissionAudioHooks::InjectHooks();
+    SaveLoadHooks::InjectHooks();
+    RadarHooks::InjectHooks();
+    ProjectileHooks::InjectHooks();
+    DamageHooks::InjectHooks();
+    ShadowHooks::InjectHooks();
+    CCarPedGenHooks::InjectHooks();
+    CSpawnWatch::InjectHooks();
+    CutsceneClothesHooks::InjectHooks();
+    CPickupSync::InjectHooks();
+    CMissionAreaMarkers::InjectHooks();
+    CMissionSyncRules::InjectHooks();
+}

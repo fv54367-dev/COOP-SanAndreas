@@ -1,0 +1,3 @@
+# CoopSA.exe must be self-contained: static CRT so no VCRUNTIME/UCRT DLLs are needed.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

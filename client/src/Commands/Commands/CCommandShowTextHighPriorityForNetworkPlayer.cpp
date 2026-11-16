@@ -1,0 +1,25 @@
+#include "stdafx.h"
+#include "COpCodeSync.h"
+#include "CCommandShowTextHighPriorityForNetworkPlayer.h"
+
+void CCommandShowTextHighPriorityForNetworkPlayer::Process(CRunningScript* script)
+{
+	char gxt[8];
+	script->ReadTextLabelFromScript(gxt, 8);
+	gxt[7] = '\0';
+	COpCodeSync::MarkPerPlayerText(script, gxt);
+
+	script->CollectParameters(3);
+
+	auto networkPlayer = CNetworkPlayerManager::GetPlayer(CPools::GetPed(ScriptParams[2]));
+	if (!networkPlayer)
+		return;
+	
+	Packets::Scripts::AddMessageGXT packet{};
+	strncpy(packet.gxt, gxt, 8);
+	packet.forWhoPlayerId = networkPlayer->m_playerId;
+	packet.type = Packets::Scripts::AddMessageGXT::eGXTMsgType::sync_COMMAND_PRINT_NOW;
+	packet.time = ScriptParams[0];
+	packet.flag = ScriptParams[1];
+	GetPacketFactory().Send(packet);
+}

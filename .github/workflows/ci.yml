@@ -1,0 +1,47 @@
+name: Build on Windows
+
+on:
+  push:
+    branches:
+      - '**'
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (launcher CoopSA)
+        run: rustup default stable
+
+      - name: Install Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: build/.build_cache
+          key: xmake-cache-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            xmake-cache-${{ github.ref_name }}-
+            xmake-cache-main-
+
+      - name: Build and publish channel
+        shell: pwsh
+        run: .github/scripts/compilar_y_publicar.ps1
