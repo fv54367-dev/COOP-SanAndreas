@@ -164,5 +164,5 @@ END
 #endif    // not APSTUDIO_INVOKED
 
 
-CUTSCENE_PLACES RCDATA "src/SceneCompat/cutscenes.txt"
-CUTSCENE_WAYS RCDATA "src/SceneCompat/cutscene_ways.txt"
+CUTSCENE_PLACES RCDATA "data/cutscenes.txt"
+CUTSCENE_WAYS RCDATA "data/cutscene_ways.txt"

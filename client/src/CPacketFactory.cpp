@@ -85,7 +85,7 @@ void CPacketFactory::Receive(const uint8_t* data, int dataSize)
 
 void CPacketFactory::RegisterPacket(Packet* pPacket)
 {
-    assert(pPacket != nullptr);
+    COOP_VERIFY(pPacket != nullptr);
 
     m_map[pPacket->GetType()] = pPacket;
 }

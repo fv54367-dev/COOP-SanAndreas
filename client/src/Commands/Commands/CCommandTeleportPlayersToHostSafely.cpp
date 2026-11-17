@@ -11,7 +11,7 @@ static constexpr float MIN_DIST = 1.0f;
 static constexpr float MAX_DIST = 5.0f;
 static void CalculateSafePositions(CVector& targetPos, float targetHeading, int playerCount, CVector* out) 
 {
-	assert(playerCount <= MAX_TELEPORT_SLOTS);
+	COOP_VERIFY(playerCount <= MAX_TELEPORT_SLOTS);
 	
 	if (playerCount == 0) return;
 
@@ -52,7 +52,7 @@ void CCommandTeleportPlayersToHostSafely::Process(CRunningScript* script)
 {
 	script->CollectParameters(3);
 
-	assert(CCoopMission::IsScriptAuthority());
+	COOP_VERIFY(CCoopMission::IsScriptAuthority());
 	
 	int playerCount = 0;
 	CNetworkPlayer* networkPlayers[MAX_TELEPORT_SLOTS];

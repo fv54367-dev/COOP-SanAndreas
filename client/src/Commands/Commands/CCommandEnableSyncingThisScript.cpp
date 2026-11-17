@@ -4,7 +4,7 @@
 
 void CCommandEnableSyncingThisScript::Process(CRunningScript* pScript)
 {
-    assert(COpCodeSync::ms_iFreeSyncedScript < ARRAY_SIZE(COpCodeSync::ms_aszSyncedScripts));
+    COOP_VERIFY(COpCodeSync::ms_iFreeSyncedScript < ARRAY_SIZE(COpCodeSync::ms_aszSyncedScripts));
 
     // CChat::AddMessage("CCommandEnableSyncingThisScript \"%s\"", pScript->m_szName);
 

@@ -21,6 +21,7 @@
 #include "INIReader/cpp/INIReader.h"
 
 #include "config.h"
+#include "verify.h"
 #include "semver.h"
 #include "logger.h"
 #include "CServerLog.h"

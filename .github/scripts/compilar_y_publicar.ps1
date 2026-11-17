@@ -1,11 +1,17 @@
 # Compila el commit actual y lo publica como canal (release canal-<nombre>) para dist/ACTUALIZAR.bat.
 # Sin parametros deduce el canal de la rama: main -> canal-main, otra rama -> canal-<rama>.
-param([string]$Canal = '', [string]$Titulo = '', [string]$Prefijo = '')
+# Con -SoloCompilar compila y prueba pero NO publica (para el job de pull request).
+param([string]$Canal = '', [string]$Titulo = '', [string]$Prefijo = '', [switch]$SoloCompilar)
 
 $ErrorActionPreference = 'Stop'
 $sha = (git rev-parse --short=7 HEAD).Trim()
 $pr = $null
 
+if ($SoloCompilar) {
+    # el job de PR no publica: la etiqueta solo tiene que identificar el commit
+    if (-not $Prefijo) { $Prefijo = 'pr' }
+    if (-not $Canal) { $Canal = 'check' }
+}
 if (-not $Canal) {
     $rama = $env:GITHUB_REF_NAME
     $Canal = ($rama.ToLower() -replace '[^a-z0-9]+', '-').Trim('-')
@@ -41,6 +47,21 @@ if ($nuevo -eq $texto) { throw 'No se pudo poner la etiqueta en shared/build_lab
 foreach ($target in 'client', 'server', 'testbot', 'proxy', 'launcher') {
     xmake build $target
     if ($LASTEXITCODE -ne 0) { throw "Fallo el build de $target" }
+}
+
+# TESTS: antes de armar el paquete. Si algo falla, el pipeline muere y NO se publica
+# ningun release: un canal roto no llega nunca a los jugadores.
+Write-Host '--- cargo test (launcher) ---'
+cargo test --manifest-path launcher/Cargo.toml
+if ($LASTEXITCODE -ne 0) { throw 'Fallo cargo test (launcher)' }
+
+Write-Host '--- testbot (protocolo del server) ---'
+& (Join-Path $PSScriptRoot 'correr_testbot.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Fallo el testbot' }
+
+if ($SoloCompilar) {
+    Write-Host 'SoloCompilar: se omite el empaquetado y la publicacion.'
+    exit 0
 }
 
 $bld = 'build/windows/x86/release'

@@ -15,7 +15,7 @@ bool bAppliedNetworkCtx = false;
 
 void CKeySync::ApplyNetworkPlayerContext(CNetworkPlayer* player)
 {
-    assert(!bAppliedNetworkCtx);
+    COOP_VERIFY(!bAppliedNetworkCtx);
 
     bAppliedNetworkCtx = true;
 
@@ -40,7 +40,7 @@ void CKeySync::ApplyNetworkPlayerContext(CNetworkPlayer* player)
 
 void CKeySync::ApplyLocalContext()
 {
-    assert(bAppliedNetworkCtx);
+    COOP_VERIFY(bAppliedNetworkCtx);
 
     bAppliedNetworkCtx = false;
 
@@ -58,7 +58,7 @@ void CKeySync::ApplyLocalContext()
 
 void CKeySync::CollectState(Packets::Players::SKeySnapshot& keySnapshot)
 {
-    assert(CWorld::PlayerInFocus == 0);
+    COOP_VERIFY(CWorld::PlayerInFocus == 0);
 
     CPad* pPad = CPad::GetPad(0);
 

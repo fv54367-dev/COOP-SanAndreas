@@ -512,7 +512,7 @@ void CNetworkPedManager::AssignHost()
 
 pedid_t CNetworkPedManager::AllocatePedId()
 {
-    assert(CNetworkPlayerManager::m_localPlayerId.valid());
+    COOP_VERIFY(CNetworkPlayerManager::m_localPlayerId.valid());
     return pedid_t(CNetworkPlayerManager::m_localPlayerId, ms_nNextPedId++);
 }
 

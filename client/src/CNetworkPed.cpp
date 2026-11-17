@@ -643,7 +643,7 @@ CNetworkPed* CNetworkPed::CreateHosted(CPed* ped)
 
 void CNetworkPed::WarpIntoVehicleDriver(CVehicle* vehicle)
 {
-    assert(m_pPed != nullptr);
+    COOP_VERIFY(m_pPed != nullptr);
 
     if (!vehicle->IsVTableValid() || !m_pPed->IsVTableValid())
     {
@@ -670,7 +670,7 @@ void CNetworkPed::WarpIntoVehicleDriver(CVehicle* vehicle)
 
 void CNetworkPed::WarpIntoVehiclePassenger(CVehicle* vehicle, int seatid)
 {
-    assert(m_pPed != nullptr);
+    COOP_VERIFY(m_pPed != nullptr);
 
     if (!vehicle->IsVTableValid() || !m_pPed->IsVTableValid())
     {
@@ -698,7 +698,7 @@ void CNetworkPed::WarpIntoVehiclePassenger(CVehicle* vehicle, int seatid)
 
 void CNetworkPed::RemoveFromVehicle(CVehicle* vehicle, bool bWarpOut)
 {
-    assert(m_pPed != nullptr);
+    COOP_VERIFY(m_pPed != nullptr);
 
     if (!vehicle->IsVTableValid() || !m_pPed->IsVTableValid())
     {

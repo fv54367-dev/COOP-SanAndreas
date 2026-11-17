@@ -12,24 +12,24 @@ CNetworkPlayerStats::CNetworkPlayerStats()
 
 float CNetworkPlayerStats::GetFloatStat(size_t index) const
 {
-    assert(index < m_aStatsFloat.size());
+    COOP_VERIFY(index < m_aStatsFloat.size());
     return m_aStatsFloat[index];
 }
 
 void CNetworkPlayerStats::SetFloatStat(size_t index, float value)
 {
-    assert(index < m_aStatsFloat.size());
+    COOP_VERIFY(index < m_aStatsFloat.size());
     m_aStatsFloat[index] = value;
 }
 
 int CNetworkPlayerStats::GetIntStat(size_t index) const
 {
-    assert(index < m_aStatsInt.size());
+    COOP_VERIFY(index < m_aStatsInt.size());
     return m_aStatsInt[index];
 }
 
 void CNetworkPlayerStats::SetIntStat(size_t index, int value)
 {
-    assert(index < m_aStatsInt.size());
+    COOP_VERIFY(index < m_aStatsInt.size());
     m_aStatsInt[index] = value;
 }

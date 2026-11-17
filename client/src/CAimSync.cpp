@@ -220,7 +220,7 @@ void CAimSync::ApplyLocalContext()
 
 void GetCameraResyncRate(uint32_t& nResyncRate)
 {
-    assert(CWorld::PlayerInFocus == 0);
+    COOP_VERIFY(CWorld::PlayerInFocus == 0);
 
     CPad* pPad = CPad::GetPad(0);
 

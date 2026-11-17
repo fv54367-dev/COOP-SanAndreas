@@ -1,0 +1,25 @@
+# EditorConfig: https://editorconfig.org
+# Mantiene los finales de linea como estan en el repo (ver .gitattributes) para que un
+# editor no reescriba un archivo entero por culpa del CRLF (la trampa #1 de AGENTS.md).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = false
+
+# publicar.sh lo ejecuta git-bash
+[*.sh]
+end_of_line = lf
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{cpp,cc,cxx}]
+# el codigo del juego: no toques los finales de linea de un archivo por error
+trim_trailing_whitespace = false

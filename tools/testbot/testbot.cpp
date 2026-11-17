@@ -844,7 +844,24 @@ bool ScenarioF(const char* host, uint16_t port)
     mode(a, false); mode(b, false); mode(c, true); mode(d, false);
     a.SendOnFoot(0, 0, GROUND_Z); b.SendOnFoot(1, 0, GROUND_Z);
     c.SendOnFoot(2, 0, GROUND_Z); d.SendOnFoot(100, 0, GROUND_Z);
-    auto pump = [&] { a.Pump(100); b.Pump(100); c.Pump(100); d.Pump(100); a.Pump(100); };
+    auto pumpFor = [&](uint32_t ms) {
+        const uint32_t start = enet_time_get();
+        do { a.Pump(1); b.Pump(1); c.Pump(1); d.Pump(1); }
+        while (uint32_t(enet_time_get() - start) < ms);
+    };
+    auto pump = [&] { pumpFor(500); };
+    // SYNC is unreliable: stream the current state like CCoopPool does in-game.
+    // Wait for identity only; validate the payload afterwards so corruption still fails.
+    auto state = [&](Bot& from, Bot& to, P& packet) {
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            from.Send(packet);
+            pumpFor(50);
+            const auto* received = to.LastPool(packet.action);
+            if (received && received->session == packet.session && received->sequence == packet.sequence) return;
+        }
+        printf("[INFO] (f) no state received: action=%u session=%u sequence=%u\n",
+            unsigned(packet.action), unsigned(packet.session), unsigned(packet.sequence));
+    };
     pump();
     P p{}; p.owner = a.Id(); p.session = 551; p.action = P::OFFER;
     bool ok = Expect(p.GetChannel() == ePacketChannel::SCRIPT, "(f) control de billar por canal fiable");
@@ -872,16 +889,18 @@ bool ScenarioF(const char* host, uint16_t port)
     ok &= Expect(!a.LastPool(P::INPUT), "(f) INPUT de espectador rechazado");
     p.session = 550; b.Send(p); pump();
     ok &= Expect(!a.LastPool(P::INPUT), "(f) INPUT de sesion vieja rechazado");
-    p.session = 551; b.Send(p); pump();
-    ok &= Expect(a.LastPool(P::INPUT) && a.LastPool(P::INPUT)->sender == b.Id() && a.LastPool(P::INPUT)->mouseX == 4,
+    p.session = 551; state(b, a, p);
+    ok &= Expect(a.LastPool(P::INPUT) && a.LastPool(P::INPUT)->session == 551 &&
+        a.LastPool(P::INPUT)->sequence == 1 && a.LastPool(P::INPUT)->sender == b.Id() &&
+        a.LastPool(P::INPUT)->mouseX == 4 && a.LastPool(P::INPUT)->keys[16] == 255,
         "(f) INPUT del segundo conserva mouse y teclas");
     p.sequence = 2; p.mouseX = 0; p.keys[16] = 0; p.keys[15] = 255; b.Send(p);
-    p.sequence = 3; p.keys[15] = 0; p.keys[14] = 255; b.Send(p); pump();
+    p.sequence = 3; p.keys[15] = 0; p.keys[14] = 255; state(b, a, p);
     ok &= Expect(a.LastPool(P::INPUT) && a.LastPool(P::INPUT)->sequence == 3 && a.LastPool(P::INPUT)->keys[14] == 255,
         "(f) inputs consecutivos conservan el ultimo boton");
     p.action = P::VIEW; p.count = 75;
     for (int i = 0; i < 75; ++i) { p.objects[i].slot = i; p.objects[i].model = 3003; }
-    a.Send(p); pump();
+    state(a, b, p);
     ok &= Expect(b.LastPool(P::VIEW) && b.LastPool(P::VIEW)->count == 75 && b.LastPool(P::VIEW)->objects[74].model == 3003,
         "(f) snapshot maximo cabe en paquete y se deserializa completo");
     p.action = P::RESULT; p.turn = 1; c.Send(p); pump();

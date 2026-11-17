@@ -1,2 +1,57 @@
+# Linguist (GitHub): para que el repo muestre bien los lenguajes.
 *.cpp linguist-language=C++
-*.h linguist-language=C++*.sh text eol=lf
+*.h   linguist-language=C++
+
+# Finales de linea.
+#
+# El repo usa core.autocrlf=true y el indice guarda todo en LF. Estas reglas lo dejan
+# explicito e independiente de la config de cada PC: git normaliza a LF en el indice
+# (text) y muestra el EOL indicado en el working tree.
+#
+# Motivo: la trampa #1 de AGENTS.md es el CRLF en .cpp/.h. Con estas reglas, si una
+# herramienta escribe LF en un .cpp, git lo normaliza igual y no aparece un archivo
+# entero modificado por el fin de linea.
+* text=auto
+
+# Codigo y archivos de Windows: CRLF en el working tree, LF en el indice.
+*.cpp text eol=crlf
+*.c   text eol=crlf
+*.cc  text eol=crlf
+*.h   text eol=crlf
+*.hpp text eol=crlf
+*.inc text eol=crlf
+*.rc  text eol=crlf
+*.txt text eol=crlf
+*.ini text eol=crlf
+*.yml text eol=crlf
+*.yaml text eol=crlf
+*.lua text eol=crlf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.md  text eol=crlf
+*.py  text eol=crlf
+*.rs  text eol=crlf
+*.json text eol=crlf
+
+# Estos dos archivos se mantienen en LF.
+/.gitattributes text eol=lf
+/.editorconfig  text eol=lf
+
+# publicar.sh lo ejecuta git-bash: tiene que quedar con LF.
+*.sh text eol=lf
+
+# Los hooks de git son scripts sh: si el shebang queda con CR, no corren.
+/.githooks/** text eol=lf
+
+# Binarios: nunca se convierten.
+*.scm   binary
+*.img   binary
+*.dll   binary
+*.exe   binary
+*.pdb   binary
+*.lib   binary
+*.aps   binary
+*.zip   binary
+*.png   binary
+*.ico   binary

@@ -595,7 +595,7 @@ void CNetwork::SendPacketNoAuth_ENet(ENetPeer* pENetPeer, const uint8_t* data, i
 void CNetwork::SendPacket(CNetworkPlayer* pNetworkPlayer, const uint8_t* data, int dataSize,
     ePacketChannel packetChannel, ePacketReliability packetReliability)
 {
-    assert(pNetworkPlayer != nullptr);
+    COOP_VERIFY(pNetworkPlayer != nullptr);
 
     uint32_t eNetPacketFlags = 0;
     if (packetReliability == ePacketReliability::RELIABLE)

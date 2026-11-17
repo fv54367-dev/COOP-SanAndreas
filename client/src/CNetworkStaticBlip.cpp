@@ -407,7 +407,7 @@ void CNetworkStaticBlip::Create(const Packets::Blips::StaticBlipsSnapshot& packe
     {
         const Packets::Blips::_StaticBlipPayload& blipState = packet.blips[i];
 
-        assert(IsAllowedSyncingRadarSprite(static_cast<eRadarSprite>(blipState.sprite)));
+        COOP_VERIFY(IsAllowedSyncingRadarSprite(static_cast<eRadarSprite>(blipState.sprite)));
 
         // CChat::AddMessage("CNetworkMissionMarker::Create({%.2f %.2f %.2f}, %d, %d)", position.x, position.y,
         // position.z, sprite, display);

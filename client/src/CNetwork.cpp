@@ -19,7 +19,7 @@ void CNetwork::Start()
 
 DWORD WINAPI CNetwork::InitAsync(LPVOID)
 {
-    assert(strcmp(m_IpAddress, "") != 0 && "Wrong IP passed");
+    COOP_VERIFY(strcmp(m_IpAddress, "") != 0 && "Wrong IP passed");
     // The endpoint code may supply its own port.
 
     if (enet_initialize() != 0)

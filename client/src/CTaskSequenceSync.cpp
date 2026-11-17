@@ -184,7 +184,7 @@ void AddNewTask(eScriptCommands opcode)
     int idx = -1;
     COpCodeSync::IsOpcodeSyncable(opcode, &idx, true);
 
-    assert(idx != -1 && "an opcode exists in 'm_serializedSequences' but not found in 'syncedOpcodes'");
+    COOP_VERIFY(idx != -1 && "an opcode exists in 'm_serializedSequences' but not found in 'syncedOpcodes'");
 
     int dataSize = 0;
     m_serializedSequences[sequenceId][m_sequenceTaskCount] = COpCodeSync::SerializeOpcode(idx, dataSize);

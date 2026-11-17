@@ -166,7 +166,7 @@ void CConfigLoader::Load()
     ms_bJustBusinessNoMarkerWait = readBool("just-business-no-marker-wait");
     ms_bHighStakesCoop = readBool("high-stakes-coop");
     ms_bHighStakesGuestNotice = readBool("high-stakes-guest-notice");
-    ms_bServerClothesRestore = readBool("server-clothes-restore");
+    ms_bServerClothesRestore = readBool("server-clothes-restore", "false");
     ms_bGuestClearAreaKeepCar = readBool("guest-clear-area-keep-car");
     ms_bHighStakesNoGridWait = readBool("high-stakes-no-grid-wait");
     ms_bHighStakesGuestBlips = readBool("high-stakes-guest-blips");
@@ -611,6 +611,106 @@ void CConfigLoader::Save()
         ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "patient-handover", ms_bPatientHandover ? "true" : "false", ms_sDataPath.c_str());
+    // The same switches: write them so an existing coopandreas.ini is completed with the value
+    // it was already using (Load's default) instead of leaving them invisible.
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "activity-challenge", ms_bActivityChallenge ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "ambulance-guest-patients", ms_bAmbulanceGuestPatients ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "cheat-announce", ms_bCheatAnnounce ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "cheat-menu-all", ms_bCheatMenuAll ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "contacts-follow-host", ms_bContactsFollowHost ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "coop-dance", ms_bCoopDance ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "coop-home-invasion", ms_bCoopHomeInvasion ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "coop-lowrider", ms_bCoopLowrider ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "coop-photos", ms_bCoopPhotos ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "cutscene-hide-extras", ms_bCutsceneHideExtras ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "cutscene-partner-smooth", ms_bCutscenePartnerSmooth ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "cutscene-partners", ms_bCutscenePartners ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "dance-guest-story", ms_bDanceGuestStory ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "dance-side-by-side", ms_bDanceSideBySide ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "dance-team-score", ms_bDanceTeamScore ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "emotes", ms_bEmotes ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "fade-guard", ms_bFadeGuard ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "just-business-bike-escort", ms_bJustBusinessBikeEscort ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "just-business-no-marker-wait", ms_bJustBusinessNoMarkerWait ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "lowrider-keep-car", ms_bLowriderKeepCar ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "menus-estilo-sa", ms_bMenusEstiloSa ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "mission-audio-zones", ms_bMissionAudioZones ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "mission-guest-actions", ms_bMissionGuestActions ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "mission-guest-car-host-reach", ms_bMissionGuestCarHostReach ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "mission-guest-car-sections", ms_bMissionGuestCarSections ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "mission-guest-counts", ms_bMissionGuestCounts ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "mission-guest-vehicles-self-board", ms_bMissionGuestVehiclesSelfBoard ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "mission-host-driver-hint", ms_bMissionHostDriverHint ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "mission-shop-clerk-fail", ms_bShopClerkFail ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "music1-beach-arrival", ms_bMusic1BeachArrival ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "music1-garage-host-driver", ms_bMusic1GarageHostDriver ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "own-static-blips", ms_bOwnStaticBlips ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "ped-damage-any-player", ms_bPedDamageAnyPlayer ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "perf-telemetry", ms_bPerfTelemetry ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "player-full-rebuild", ms_bPlayerFullRebuild ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "pool-two-players", ms_bPoolTwoPlayers ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "recruit-all-players", ms_bRecruitAllPlayers ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "recruit-dismiss-sync", ms_bRecruitDismissSync ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "remote-boat-sync", ms_bRemoteBoatSync ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "remote-heli-rotor-sync", ms_bRemoteHeliRotorSync ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "remote-horn-sync", ms_bRemoteHornSync ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "remote-revive-auto", ms_bRemoteReviveAuto ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "scene-guests-visible", ms_bSceneGuestsVisible ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "teleport-load-interior", ms_bTeleportLoadInterior ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "train-sync", ms_bTrainSync ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "train-sync-rail", ms_bTrainSyncRail ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "voice-chat", ms_bVoiceChat ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "vs-race-sync", ms_bVsRaceSync ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "weapon-model-release", ms_bWeaponModelRelease ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "settings-version", "1", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "cheat-menu-key",
         ("F" + std::to_string(CCheatMenu::ms_nToggleKey - VK_F1 + 1)).c_str(), ms_sDataPath.c_str());

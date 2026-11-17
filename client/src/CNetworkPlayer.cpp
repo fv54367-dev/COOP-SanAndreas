@@ -22,7 +22,7 @@ CNetworkPlayer::CNetworkPlayer(playerid_t id, CVector position)
     m_playerId = id;
     memset(m_anChainProgress, Packets::Scripts::PlayerMissionMode::CHAIN_UNKNOWN, sizeof(m_anChainProgress));
     m_nSlot = CNetworkPlayerManager::GetFreeSlot();
-    assert(m_nSlot != -1);
+    COOP_VERIFY(m_nSlot != -1);
 
     m_pPedClothesDesc.SetTextureAndModel("VEST", "VEST", 0);
     m_pPedClothesDesc.SetTextureAndModel("JEANSDENIM", "JEANS", 2);
@@ -304,7 +304,7 @@ char CNetworkPlayer::GetWeaponSkill(eWeaponType weaponType)
 
 void CNetworkPlayer::WarpIntoVehicleDriver(CVehicle* vehicle)
 {
-    assert(m_pPed != nullptr);
+    COOP_VERIFY(m_pPed != nullptr);
 
     if (vehicle == nullptr || !vehicle->IsVTableValid() || !m_pPed->IsVTableValid() || m_bDead)
     {
@@ -330,7 +330,7 @@ void CNetworkPlayer::WarpIntoVehicleDriver(CVehicle* vehicle)
 
 void CNetworkPlayer::WarpIntoVehiclePassenger(CVehicle* vehicle, int seatid)
 {
-    assert(m_pPed != nullptr);
+    COOP_VERIFY(m_pPed != nullptr);
 
     if (vehicle == nullptr || !vehicle->IsVTableValid() || !m_pPed->IsVTableValid() || m_bDead ||
         seatid < 0 || seatid >= 8 || seatid >= vehicle->m_nMaxPassengers)
@@ -363,7 +363,7 @@ void CNetworkPlayer::WarpIntoVehiclePassenger(CVehicle* vehicle, int seatid)
 
 void CNetworkPlayer::EnterVehiclePassenger(CVehicle* vehicle, int seatid)
 {
-    assert(m_pPed != nullptr);
+    COOP_VERIFY(m_pPed != nullptr);
 
     if (vehicle == nullptr || !vehicle->IsVTableValid() || !m_pPed->IsVTableValid() || m_bDead ||
         seatid < 0 || seatid >= 8 || seatid >= vehicle->m_nMaxPassengers)
@@ -392,7 +392,7 @@ void CNetworkPlayer::EnterVehiclePassenger(CVehicle* vehicle, int seatid)
 
 void CNetworkPlayer::RemoveFromVehicle(CVehicle* vehicle)
 {
-    assert(m_pPed != nullptr);
+    COOP_VERIFY(m_pPed != nullptr);
 
     if (vehicle == nullptr || !vehicle->IsVTableValid() || !m_pPed->IsVTableValid())
     {

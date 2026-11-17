@@ -485,7 +485,7 @@ void CNetworkVehicleManager::UpdatePassenger(CVehicle* pVehicle, CPlayerPed* pPl
 
 vehicleid_t CNetworkVehicleManager::AllocateVehicleId()
 {
-	assert(CNetworkPlayerManager::m_localPlayerId.valid());
+	COOP_VERIFY(CNetworkPlayerManager::m_localPlayerId.valid());
 	return vehicleid_t(CNetworkPlayerManager::m_localPlayerId, ms_nNextVehicleId++);
 }
 

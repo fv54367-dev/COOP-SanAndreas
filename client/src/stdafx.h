@@ -29,6 +29,7 @@
 // config
 
 #include "../shared/config.h"
+#include "../shared/verify.h"
 
 // plugin-sdk ------------------------------------------------------------------------------
 

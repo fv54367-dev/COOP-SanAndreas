@@ -190,11 +190,11 @@ void CPacketFactory::Receive(const uint8_t* data, int dataSize, CNetworkPlayer* 
 
 void CPacketFactory::RegisterPacket(Packet* pPacket)
 {
-    assert(pPacket != nullptr);
+    COOP_VERIFY(pPacket != nullptr);
 
     ePacketType packetType = pPacket->GetType();
 
-    assert(m_map.find(packetType) == m_map.end());
+    COOP_VERIFY(m_map.find(packetType) == m_map.end());
 
     m_map[packetType] = pPacket;
 }

@@ -972,7 +972,7 @@ std::vector<uint8_t> COpCodeSync::SerializeOpcode(int idx, int& outSize)
         pCurrent += textLengthBuffer[i];
     }
 
-    assert(dataSize <= Packets::Scripts::OpCodeSync::MAX_BUFFER_SIZE);
+    COOP_VERIFY(dataSize <= Packets::Scripts::OpCodeSync::MAX_BUFFER_SIZE);
 
     outSize = dataSize;
     return buffer;

@@ -102,6 +102,31 @@ target("client", function()
     add_deps("discordrpc")
 
     add_links("d3dx9") -- TODO STATIC
+
+    -- version.rc embeds client/data/*.txt as RCDATA, but rc.exe only runs again when the .rc
+    -- itself changes: an edited table would be silently ignored. Rewrite the .rc (same bytes)
+    -- when a data file is newer, so the change reaches the binary.
+    -- Note: os.touch() is a no-op on Windows here (opens and closes without writing).
+    before_build(function (target)
+        local rc = path.join(os.projectdir(), "client/version.rc")
+        local rcTime = os.mtime(rc)
+        if not rcTime then
+            return
+        end
+        for _, name in ipairs({ "client/data/cutscenes.txt", "client/data/cutscene_ways.txt" }) do
+            local fileTime = os.mtime(path.join(os.projectdir(), name))
+            if fileTime and fileTime > rcTime then
+                local reader = io.open(rc, "rb")
+                local content = reader:read("*a")
+                reader:close()
+                local writer = io.open(rc, "wb")
+                writer:write(content)
+                writer:close()
+                cprint("${yellow}version.rc: %s cambio, se recompila el recurso", name)
+                return
+            end
+        end
+    end)
 end)
 
 target("server", function ()
