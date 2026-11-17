@@ -113,6 +113,16 @@ void CVsLobby::AbortScript(CRunningScript* pScript)
         CMissionMirror::LogEvent("vs-lobby-abort-failed reason=no-gosub");
         return;
     }
+    // exit_mode (local 53) is not set yet: 0 would send the player to the Race Tournament marker of the city
+    // (RaceTour.sc mission_cleanup_cprace); 2 skips that teleport and its fade in
+    if (pScript->m_bIsMission)
+    {
+        reinterpret_cast<int*>(CTheScripts::LocalVariablesForCurrentMission)[53] = 2;
+        // stays where the marker is, a step back out of it so the launcher does not start it again at once
+        if (CPlayerPed* pPlayer = FindPlayerPed(0); pPlayer != nullptr && !pPlayer->m_nPedFlags.bInVehicle)
+            pPlayer->SetPosn(pPlayer->GetPosition() - pPlayer->GetForward() * 3.0f);
+        TheCamera.Fade(0.5f, 1);  // the launcher faded the screen out (mini_fade)
+    }
     pScript->m_pCurrentIP = pScript->m_apStack[--pScript->m_nSP];
     pScript->m_nWakeTime = 0;
     CMissionMirror::LogEventf("vs-lobby-abort script=%.8s", pScript->m_szName);
@@ -227,6 +237,10 @@ bool CVsLobby::StartReached()
 
 void CVsLobby::Process()
 {
+    // the aborted script ended: a race launched later may get the same script slot and must be held again
+    if (ms_pAborted != nullptr && !IsScriptRunning(ms_pAborted))
+        ms_pAborted = nullptr;
+
     if (ms_eRole == ROLE_NONE)
         return;
 
