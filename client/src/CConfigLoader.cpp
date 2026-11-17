@@ -124,7 +124,8 @@ void CConfigLoader::Load()
     ms_bRandomCopsCap = readBool("random-cops-cap");
     ms_bCoopSideMissions = readBool("coop-side-missions");
     ms_bOwnStaticBlips = readBool("own-static-blips");
-    ms_bStoryHelpOptional = readBool("story-help-optional");
+    // off by the owner (testeo 17-11, buggy): a new key so the old ini files that kept true do not turn it on
+    ms_bStoryHelpOptional = readBool("story-help-ask", "false");
     // old ini files kept contacts-follow-host=true: story-help-optional replaces it (each one sees his own contacts)
     ms_bContactsFollowHost = readBool("contacts-follow-host", "false") && !ms_bStoryHelpOptional;
     ms_bTeleportLoadInterior = readBool("teleport-load-interior");
@@ -628,7 +629,7 @@ void CConfigLoader::Save()
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "contacts-follow-host", ms_bContactsFollowHost ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
-        CONFIG_SECTION.c_str(), "story-help-optional", ms_bStoryHelpOptional ? "true" : "false", ms_sDataPath.c_str());
+        CONFIG_SECTION.c_str(), "story-help-ask", ms_bStoryHelpOptional ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "coop-dance", ms_bCoopDance ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(

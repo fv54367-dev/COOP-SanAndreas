@@ -45,7 +45,7 @@ private:
 		{"coop-side-missions", "true"},
 		{"own-static-blips", "true"},
 		{"contacts-follow-host", "false"},
-		{"story-help-optional", "true"},
+		{"story-help-ask", "false"},
 		{"teleport-load-interior", "true"},
         {"coop-lowrider", "true"},
         {"lowrider-keep-car", "true"},
@@ -366,7 +366,7 @@ public:
 	static inline bool ms_bContactsFollowHost = false;
 	// story-help-optional: a guest that is not at the same point of a story chain as the authority is not waited for nor
 	// forced in: he is asked "help <host> in <mission>? Y/N" (CStoryHelp); off = the chain mismatch blocks the start
-	static inline bool ms_bStoryHelpOptional = true;
+	static inline bool ms_bStoryHelpOptional = false;
 	// a mission teleport into the authority's interior shows that interior and loads it (as an entrance does) before the
 	// move; off = only the ped's area changes (he fell out to the street with the interior's empty view)
 	static inline bool ms_bTeleportLoadInterior = true;
