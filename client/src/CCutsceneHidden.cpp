@@ -87,6 +87,31 @@ void Snapshot(const char* phase) {
         Log("cutscene-hide-request name=%.32s model=%d pos=%.3f,%.3f,%.3f found=%u native-found=%u", r.name, r.model, r.pos.x, r.pos.y, r.pos.z, found, nativeFound);
     }
 }
+// Diagnostic for the new game scene (PROLOG1, interior 14): its map pieces were reported not drawn. Counts the map
+// entities around the cutscene offset: in the shown area, visible, and with a loaded RwObject.
+void AreaReport(const char* phase) {
+    const CVector offset = CCutsceneMgr::ms_cutsceneOffset;
+    unsigned total = 0, inArea = 0, visible = 0, loaded = 0, drawable = 0;
+    unsigned areas[256]{};
+    VisitWorld([&](auto* entity, int) {
+        const auto pos = entity->GetPosition();
+        if ((CVector2D(pos.x, pos.y) - CVector2D(offset.x, offset.y)).Magnitude() > 60.0f || fabsf(pos.z - offset.z) > 40.0f) return;
+        ++total;
+        ++areas[entity->m_nAreaCode];
+        bool here = entity->m_nAreaCode == CGame::currArea || entity->m_nAreaCode == 13;
+        if (here) ++inArea;
+        if (entity->m_bIsVisible) ++visible;
+        if (entity->m_pRwObject) ++loaded;
+        if (here && entity->m_bIsVisible && entity->m_pRwObject) ++drawable;
+    });
+    char byArea[256]{};
+    for (int a = 0, n = 0; a < 256; ++a)
+        if (areas[a]) n += sprintf_s(byArea + n, sizeof(byArea) - n, "%d:%u ", a, areas[a]);
+    auto* player = FindPlayerPed(0);
+    Log("cutscene-area phase=%s currArea=%d offset=%.1f,%.1f,%.1f playerArea=%d near=%u in-area=%u visible=%u loaded=%u drawable=%u by-area=%s",
+        phase, CGame::currArea, offset.x, offset.y, offset.z, player ? (int)player->m_nAreaCode : -1, total, inArea, visible,
+        loaded, drawable, byArea);
+}
 bool Valid(const Hidden& h) {
     if (!h.entity) return false;
     if (h.type == ENTITY_TYPE_OBJECT) return CPools::ms_pObjectPool && CPools::ms_pObjectPool->GetAtRef(h.handle) == h.entity;
@@ -142,6 +167,7 @@ void __cdecl HideRequested() {
     CCutsceneMgr::HideRequestedObjects();
     active = true;
     Snapshot("native-hide");
+    AreaReport("native-hide");
     HideExtras();
 }
 void Process() {
@@ -155,10 +181,12 @@ void Process() {
         started = true;
         startTime = GetTickCount();
         Snapshot("start");
+        AreaReport("start");
     }
     if (started && !sampled && GetTickCount() - startTime >= 2000) {
         sampled = true;
         Snapshot("start+2s");
+        AreaReport("start+2s");
     }
     HideExtras();
 }
