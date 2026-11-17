@@ -63,6 +63,7 @@
 #include <CObjectSync.h>
 #include <CMinigameVs.h>
 #include <CCoopMission.h>
+#include <CStoryHelp.h>
 #include <CCheatSync.h>
 #include <CParachuteSync.h>
 #include <CPlayerAnimMirror.h>
@@ -434,6 +435,7 @@ public:
 
                 CMinigameVs::Process();
                 CCoopMission::Process();
+                CStoryHelp::Process();
 
                 CNetworkEntityBlip::Update();
 

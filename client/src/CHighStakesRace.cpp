@@ -11,6 +11,7 @@
 #include "CMissionHints.h"
 #include "CLocalPlayer.h"
 #include "CStoryProgress.h"
+#include "CStoryHelp.h"
 #include <CRadar.h>
 #include <CFont.h>
 #include <CSprite2d.h>
@@ -418,9 +419,19 @@ bool CHighStakesRace::FilterStart(CRunningScript* s, uint16_t op, bool state) {
     // high-stakes-seat-presence: the host may also ride along (the native launcher accepts any seat: LocateAnyMeans3D +
     // StoreCarIsInNoSave + IsLowRider of the car), e.g. a guest drives and the host is the passenger.
     if ((authority && !CConfigLoader::ms_bHighStakesSeatPresence) ? !Lowrider(me) : !InLowrider(me)) return false;
+    // story-help-optional (launch only): the guest that does not have it pending waits for the invitation; the authority
+    // waits only for the players that have it pending or accepted to help (chain 5, CESAR: $flag_cesar_mission_counter)
+    constexpr int CESAR_STORY_CHAIN = 5;
+    const bool helpChain = launch && CStoryHelp::Enabled();
+    if (helpChain && !authority && CStoryHelp::GuestNotPending(CESAR_STORY_CHAIN)) return false;
+    if (helpChain && authority) CStoryHelp::GateTouch();
     std::string missing, detail;
     if (coop) for (auto p : CNetworkPlayerManager::m_pPlayers) {
         if (!p->m_pPed || !CCoopMission::ShouldIncludeNetworkPlayer(p)) continue;
+        if (helpChain) {
+            const auto role = CStoryHelp::GetRole(p, CESAR_STORY_CHAIN);
+            if (role != CStoryHelp::ROLE_PENDING && role != CStoryHelp::ROLE_HELPER) continue;
+        }
         if (p->m_bDead || (launch && p->m_nRunningMission >= 0) || !InLowrider(p->m_pPed) || p->m_pPed->m_nAreaCode != me->m_nAreaCode ||
             (p->m_pPed->GetPosition()-me->GetPosition()).Magnitude() > 12.0f) {
             if (!missing.empty()) missing += ", "; missing += p->GetName();
@@ -456,10 +467,25 @@ bool CHighStakesRace::FilterStart(CRunningScript* s, uint16_t op, bool state) {
         }
         return false;
     }
+    if (helpChain && coop) {
+        // the ones that have it pending are here: the others are asked to help, and he waits for their answer
+        std::string asking;
+        if (CStoryHelp::AskNotPending(CESAR_STORY_CHAIN, asking)) {
+            static uint32_t lastAsking = 0;
+            if (GetTickCount()-lastAsking > 4000) {
+                lastAsking = GetTickCount();
+                CMissionHints::Help("Esperando que " + asking + " decida si ayuda en la mision.");
+            }
+            return false;
+        }
+    }
     if (launch) {
         entrants.clear();
         if (coop) for (auto p : CNetworkPlayerManager::m_pPlayers)
-            if (CCoopMission::ShouldIncludeNetworkPlayer(p)) entrants.push_back(p->m_playerId);
+            if (CCoopMission::ShouldIncludeNetworkPlayer(p) &&
+                (!helpChain || CStoryHelp::GetRole(p, CESAR_STORY_CHAIN) == CStoryHelp::ROLE_PENDING ||
+                 CStoryHelp::GetRole(p, CESAR_STORY_CHAIN) == CStoryHelp::ROLE_HELPER))
+                entrants.push_back(p->m_playerId);
         armed = true; armedAt = GetTickCount();
     }
     return true;

@@ -3,6 +3,7 @@
 #include "CCoopMission.h"
 #include "COpCodeSync.h"
 #include "CMissionMode.h"
+#include "CStoryHelp.h"
 
 int CStoryProgress::GetGlobalsEnd()
 {
@@ -30,6 +31,7 @@ void CStoryProgress::OnMissionLaunched()
     ms_base.assign(reinterpret_cast<const uint8_t*>(CTheScripts::ScriptSpace),
         reinterpret_cast<const uint8_t*>(CTheScripts::ScriptSpace) + end);
     ms_bTracking = true;
+    CStoryHelp::OnMissionLaunched();
 }
 
 void CStoryProgress::OnMissionPassed()
@@ -45,7 +47,10 @@ void CStoryProgress::OnMissionEnded()
     ms_bPassed = false;
 
     if (!bSend)
+    {
+        CStoryHelp::OnMissionEnded(false);
         return;
+    }
 
     const uint8_t* pSpace = reinterpret_cast<const uint8_t*>(CTheScripts::ScriptSpace);
     const int end = static_cast<int>(ms_base.size());
@@ -78,12 +83,16 @@ void CStoryProgress::OnMissionEnded()
         GetPacketFactory().Send(packet);
 
     ms_base.clear();
+    // after the progress: the players offered the mission are told it is over; the contacts it changed follow
+    CStoryHelp::OnMissionEnded(true);
 }
 
 void CStoryProgress::Apply(const Packets::Scripts::StoryProgressSync& packet)
 {
     // a player that plays alone does not share the progress of the others' missions, and the authority sent it
-    if (CCoopMission::IsScriptAuthority() || CMissionMode::IsIndividual() || COpCodeSync::IsLocalMissionRunning())
+    // a helper (or one that declined) of a mission he did not have pending saves nothing of it (story-help-optional)
+    if (CCoopMission::IsScriptAuthority() || CMissionMode::IsIndividual() || COpCodeSync::IsLocalMissionRunning() ||
+        CStoryHelp::IsNotPending())
         return;
 
     const int end = GetGlobalsEnd();

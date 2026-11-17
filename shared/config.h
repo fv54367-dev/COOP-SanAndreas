@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#define COOPSA_VERSION "0.4.56-alpha"
+#define COOPSA_VERSION "0.4.57-alpha"
 struct Config
 {
     static constexpr uint16_t DEFAULT_PORT = 6767;

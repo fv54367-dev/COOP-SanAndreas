@@ -124,7 +124,9 @@ void CConfigLoader::Load()
     ms_bRandomCopsCap = readBool("random-cops-cap");
     ms_bCoopSideMissions = readBool("coop-side-missions");
     ms_bOwnStaticBlips = readBool("own-static-blips");
-    ms_bContactsFollowHost = readBool("contacts-follow-host");
+    ms_bStoryHelpOptional = readBool("story-help-optional");
+    // old ini files kept contacts-follow-host=true: story-help-optional replaces it (each one sees his own contacts)
+    ms_bContactsFollowHost = readBool("contacts-follow-host", "false") && !ms_bStoryHelpOptional;
     ms_bTeleportLoadInterior = readBool("teleport-load-interior");
     ms_bCoopLowrider = readBool("coop-lowrider");
     ms_bLowriderKeepCar = readBool("lowrider-keep-car");
@@ -623,6 +625,8 @@ void CConfigLoader::Save()
         CONFIG_SECTION.c_str(), "cheat-menu-all", ms_bCheatMenuAll ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "contacts-follow-host", ms_bContactsFollowHost ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "story-help-optional", ms_bStoryHelpOptional ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "coop-dance", ms_bCoopDance ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(

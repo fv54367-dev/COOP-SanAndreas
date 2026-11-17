@@ -13,6 +13,7 @@
 #include "CVsLobby.h"
 #include "CVsRace.h"
 #include "CCoopMission.h"
+#include "CStoryHelp.h"
 #include "CConfigLoader.h"
 #include "CMissionHints.h"
 #include <CFont.h>
@@ -240,6 +241,7 @@ void CImGui::Init()
             CVoice::Draw();
             CMinigameVs::Draw();
             CCoopMission::Draw();
+            CStoryHelp::Draw();
             CVsLobby::Draw();
             CVsRace::DrawHud();
 

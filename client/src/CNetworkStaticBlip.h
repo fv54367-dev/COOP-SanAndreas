@@ -34,6 +34,11 @@ public:
 
 	// every frame (contacts-follow-host): a guest playing coop sees the host's contact points instead of his own
 	static void Process();
+	// story-help (contacts-follow-host off): this game's contact points, as the snapshot sends them, and the delta the
+	// authority's story mission made applied to them: the removed ones are cleared, the added ones made if missing
+	static void CollectContacts(std::vector<Packets::Blips::_StaticBlipPayload>& out);
+	static void ApplyContactDelta(const Packets::Blips::_StaticBlipPayload* removed, int countRemoved,
+		const Packets::Blips::_StaticBlipPayload* added, int countAdded);
 	// around GenericSave: the save holds this game's own icons only (nothing made from the host's snapshot)
 	static void BeforeSave();
 	static void AfterSave();

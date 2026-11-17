@@ -156,7 +156,9 @@
     X(MOD_MANIFEST) \
     X(MOD_CHECK_RESULT) \
     X(CHEAT_ANNOUNCE) \
-    X(CLIENT_CONFIG_OVERRIDE) 
+    X(CLIENT_CONFIG_OVERRIDE) \
+    X(STORY_HELP) \
+    X(STORY_CONTACTS) 
 
 enum class ePacketType : uint16_t
 {

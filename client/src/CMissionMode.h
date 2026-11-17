@@ -28,7 +28,10 @@ public:
     // somebody else plays the missions in coop mode
     static bool AnyOtherCoop();
 
-    static void SetIndividual(bool bIndividual);
+    // bQuiet: no chat line (story-help-optional drops a guest to individual for one mission and gives it back, CStoryHelp)
+    static void SetIndividual(bool bIndividual, bool bQuiet = false);
+    // the local counter of a story chain as this player's own progress (not the one copied from the host), -1 out of range
+    static int OwnChain(int chain);
     // CCore::Init: reads the Sweet progress by itself and tells the others every few seconds (a packet sent before the
     // connection was ready, or lost, would leave the others without it until the next change)
     static void Init();

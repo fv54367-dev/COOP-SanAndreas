@@ -44,7 +44,8 @@ private:
 		{"random-cops-cap", "true"},
 		{"coop-side-missions", "true"},
 		{"own-static-blips", "true"},
-		{"contacts-follow-host", "true"},
+		{"contacts-follow-host", "false"},
+		{"story-help-optional", "true"},
 		{"teleport-load-interior", "true"},
         {"coop-lowrider", "true"},
         {"lowrider-keep-car", "true"},
@@ -354,8 +355,12 @@ public:
 	// host's world snapshot only brings the blips of the coop mission they play. Off = the snapshot replaces them all
 	static inline bool ms_bOwnStaticBlips = true;
 	// with own-static-blips, a guest playing coop sees the host's contact points (icon and yellow marker): his own ones the
-	// host lacks are hidden, the host's he lacks are made. Off = the guest only sees his own contacts
-	static inline bool ms_bContactsFollowHost = true;
+	// host lacks are hidden, the host's he lacks are made. Off (default since 17-11) = the guest only sees his own contacts,
+	// updated by the story-help contact delta (CStoryHelp)
+	static inline bool ms_bContactsFollowHost = false;
+	// story-help-optional: a guest that is not at the same point of a story chain as the authority is not waited for nor
+	// forced in: he is asked "help <host> in <mission>? Y/N" (CStoryHelp); off = the chain mismatch blocks the start
+	static inline bool ms_bStoryHelpOptional = true;
 	// a mission teleport into the authority's interior shows that interior and loads it (as an entrance does) before the
 	// move; off = only the ped's area changes (he fell out to the street with the interior's empty view)
 	static inline bool ms_bTeleportLoadInterior = true;

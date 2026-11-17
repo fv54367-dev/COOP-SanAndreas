@@ -260,6 +260,81 @@ void FollowHostContacts()
 }
 }
 
+void CNetworkStaticBlip::CollectContacts(std::vector<Packets::Blips::_StaticBlipPayload>& out)
+{
+    for (int i = 0; i < MAX_RADAR_TRACES; i++)
+    {
+        if (!IsOwnContact(i))
+            continue;
+        const auto& trace = CRadar::ms_RadarTrace[i];
+        Packets::Blips::_StaticBlipPayload blipState{};
+        blipState.position = TracePosition(trace);
+        blipState.display = trace.m_nBlipDisplay;
+        blipState.sprite = trace.m_nRadarSprite;
+        blipState.type = 0;
+        blipState.shortRange = trace.m_bShortRange;
+        blipState.friendly = trace.m_bFriendly;
+        blipState.coordBlipAppearance = trace.m_nCoordBlipAppearance;
+        blipState.size = trace.m_nBlipSize;
+        blipState.color = trace.m_nColour;
+        out.push_back(blipState);
+    }
+}
+
+void CNetworkStaticBlip::ApplyContactDelta(const Packets::Blips::_StaticBlipPayload* removed, int countRemoved,
+    const Packets::Blips::_StaticBlipPayload* added, int countAdded)
+{
+    // contacts-follow-host shows the host's contacts by itself
+    if (FollowsHost())
+        return;
+    int cleared = 0;
+    for (int r = 0; r < countRemoved; r++)
+    {
+        for (int i = 0; i < MAX_RADAR_TRACES; i++)
+        {
+            if (!IsOwnContact(i))
+                continue;
+            const auto& trace = CRadar::ms_RadarTrace[i];
+            if (trace.m_nRadarSprite != removed[r].sprite || !SamePlace(TracePosition(trace), removed[r].position))
+                continue;
+            CMissionMirror::LogEventf("story-contacts clear sprite=%d at=%.0f,%.0f", (int)removed[r].sprite, removed[r].position.x,
+                removed[r].position.y);
+            CRadar::ClearActualBlip(i);
+            cleared++;
+            break;
+        }
+    }
+    // the mission removed icons this game does not have: he is not at its point of the story, so its new icons are not his
+    if (countRemoved > 0 && cleared == 0)
+        return;
+    for (int a = 0; a < countAdded; a++)
+    {
+        bool have = false;
+        for (int i = 0; i < MAX_RADAR_TRACES && !have; i++)
+        {
+            if (!IsOwnContact(i))
+                continue;
+            const auto& trace = CRadar::ms_RadarTrace[i];
+            have = trace.m_nRadarSprite == added[a].sprite && SamePlace(TracePosition(trace), added[a].position);
+        }
+        if (have)
+            continue;
+        const CVector position = added[a].position;
+        const int blip = CRadar::SetCoordBlip(BLIP_CONTACTPOINT, position, 0, static_cast<eBlipDisplay>(added[a].display), nullptr);
+        const auto index = CRadar::GetActualBlipArrayIndex(blip);
+        if (index == -1)
+            continue;
+        CRadar::SetBlipSprite(blip, added[a].sprite);
+        MarkMissionBlip(index, false);
+        auto& trace = CRadar::ms_RadarTrace[index];
+        trace.m_bShortRange = added[a].shortRange;
+        trace.m_bFriendly = added[a].friendly;
+        trace.m_nBlipSize = added[a].size;
+        trace.m_nColour = added[a].color;
+        CMissionMirror::LogEventf("story-contacts make sprite=%d at=%.0f,%.0f", (int)added[a].sprite, position.x, position.y);
+    }
+}
+
 void CNetworkStaticBlip::Process()
 {
     static unsigned int lastFrame = 0;

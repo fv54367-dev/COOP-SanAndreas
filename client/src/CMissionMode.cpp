@@ -237,11 +237,18 @@ std::string CMissionMode::GetSweetMissionName(int counter)
     return "otra mision";
 }
 
+int CMissionMode::OwnChain(int chain)
+{
+    if (chain < 0 || chain >= STORY_CHAIN_COUNT)
+        return -1;
+    return CMissionSyncRules::OwnChainCounter(chain, ChainCounter(chain));
+}
+
 int CMissionMode::LauncherChain(const char* szLauncher)
 {
     // the launchers of CMissionSyncRules' aszStoryLaunchers, by the counter they check (s_aChains)
     static const struct { const char* szName; int nChain; } aLaunchers[] = {
-        {"SWEET", 0}, {"RYDER", 1}, {"SMOKE", 2}, {"STRAP", 3}, {"CRASH", 4}, {"LA1FIN", 6}, {"CAT", 7}, {"TRU", 8},
+        {"SWEET", 0}, {"RYDER", 1}, {"SMOKE", 2}, {"STRAP", 3}, {"CRASH", 4}, {"CESAR", 5}, {"LA1FIN", 6}, {"CAT", 7}, {"TRU", 8},
         {"BCRASH", 9}, {"GARAGE", 10}, {"ZERO", 11}, {"WUZI", 12}, {"STEAL", 13}, {"SYND", 14}, {"SCRASH", 15},
         {"DESERT", 16}, {"CASINO", 17}, {"VCRASH", 18}, {"DOC", 19}, {"HEIST", 20}, {"MANSION", 21}, {"GROVE", 22},
         {"RIOT", 23}};
@@ -309,7 +316,7 @@ void CMissionMode::ShowIndividualOnlyHint()
     CChat::AddMessage("{c7a6ff}[Coop]{d6dce8} Esta mision no se juega en coop. Cambia tu modo a individual (F1) para empezarla.");
 }
 
-void CMissionMode::SetIndividual(bool bIndividual)
+void CMissionMode::SetIndividual(bool bIndividual, bool bQuiet)
 {
     if (ms_bIndividual == bIndividual)
         return;
@@ -331,6 +338,9 @@ void CMissionMode::SetIndividual(bool bIndividual)
         CCoopMission::LocalCleanup();
         CMessages::ClearMessages(false);
     }
+
+    if (bQuiet)
+        return;
 
     CChat::AddMessage(bIndividual ? "{c7a6ff}[Coop]{d6dce8} Misiones en modo INDIVIDUAL: las jugas solo, sin esperar a nadie."
                                   : "{c7a6ff}[Coop]{d6dce8} Misiones en modo COOPERATIVO: las jugas con los demas jugadores en coop.");

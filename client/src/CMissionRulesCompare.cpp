@@ -25,6 +25,7 @@
 #include "Commands/CommandHooks.h"
 #include "UI/CChat.h"
 #include "CMissionMode.h"
+#include "CStoryHelp.h"
 #include "CMissionLock.h"
 #include "CMissionHints.h"
 #include "CMissionSceneWait.h"
@@ -62,14 +63,21 @@ static bool IsPedNearMissionLocate(CPed* ped, const CVector& center, float radiu
 }
 
 // the players of the mission that are not near the area of a LOCATE on the local player (names for the chat)
+// chain >= 0 (story-help-optional): only the players that have the mission pending, or accepted to help, are waited for
 static bool AreMissionPlayersNear(const CVector& center, float radius, float height, bool b3D, std::string& missing,
-    float minReach = 12.0f)
+    float minReach = 12.0f, int chain = -1)
 {
     CPlayerPed* localPlayer = FindPlayerPed(0);
     for (auto networkPlayer : CNetworkPlayerManager::m_pPlayers)
     {
         if (!networkPlayer->m_pPed || !CCoopMission::ShouldIncludeNetworkPlayer(networkPlayer))
             continue;
+        if (chain >= 0)
+        {
+            const auto role = CStoryHelp::GetRole(networkPlayer, chain);
+            if (role != CStoryHelp::ROLE_PENDING && role != CStoryHelp::ROLE_HELPER)
+                continue;
+        }
         const bool bNear = !CMissionLock::IsIndependentIntro(networkPlayer->m_nRunningMission) &&
             IsPedNearMissionLocate(networkPlayer->m_pPed, center, radius, height, b3D, localPlayer->m_nAreaCode, minReach);
         if (!bNear)
@@ -148,7 +156,8 @@ static bool FilterMissionStart(CRunningScript* script)
         std::string other;
         int theirs = 0, mine = 0;
         const int chain = CMissionMode::LauncherChain(script->m_szName);
-        if (CConfigLoader::ms_bVanillaScripts && CMissionMode::FindChainMismatch(chain, other, theirs, mine))
+        // story-help-optional: a player at another point of the chain is asked to help instead of blocking the start
+        if (CConfigLoader::ms_bVanillaScripts && !CStoryHelp::Enabled() && CMissionMode::FindChainMismatch(chain, other, theirs, mine))
         {
             CMissionMode::ShowChainMismatch(chain, other, theirs, mine);
             return false;
@@ -164,10 +173,15 @@ static bool FilterMissionStart(CRunningScript* script)
     }
 
     std::string missing;
+    // story-help-optional: the chain of the mission this marker starts (-1: not classified, everybody is waited for)
+    const int helpChain = CStoryHelp::Enabled() ? CMissionMode::LauncherChain(script->m_szName) : -1;
     // a coop guest never starts it: the authority runs it for everybody. The authority only tells who is missing when
     // he is in the marker himself: a guest here alone sees who he waits for.
     if (!CCoopMission::IsScriptAuthority())
     {
+        // his own progress is not the authority's: nobody waits for him, he waits for the invitation
+        if (helpChain >= 0 && CStoryHelp::GuestNotPending(helpChain))
+            return false;
         bool bAllHere = AreMissionPlayersNear(FindPlayerCoors(0), 1.0f, 1.0f, true, missing, 4.0f);
         // The host's own launcher only asks with him inside its small marker (1.2 m): 4 m from us is not enough. Next to
         // the guest but off the marker, neither game said anything and the mission never started (Cesar Vialpando, 14-11).
@@ -198,7 +212,9 @@ static bool FilterMissionStart(CRunningScript* script)
     }
 
     // the start marker is small: everybody within a few metres of him
-    if (!AreMissionPlayersNear(FindPlayerCoors(0), 1.0f, 1.0f, true, missing, 4.0f))
+    if (helpChain >= 0)
+        CStoryHelp::GateTouch();
+    if (!AreMissionPlayersNear(FindPlayerCoors(0), 1.0f, 1.0f, true, missing, 4.0f, helpChain))
     {
         CMissionHints::AuthorityWait(Packets::Scripts::MissionWaitNotice::START, missing);
         static DWORD nLastMessage = 0;
@@ -211,6 +227,18 @@ static bool FilterMissionStart(CRunningScript* script)
                 CMissionHints::Help("Esperando a " + missing + " en el marcador para empezar la mision.");
             }
             CMissionMirror::LogEventf("rule-start-wait launcher=%.8s missing=%s", script->m_szName, missing.c_str());
+        }
+        return false;
+    }
+    // the ones that have it pending are here: the others are asked to help, and he waits for their answer
+    std::string asking;
+    if (helpChain >= 0 && CStoryHelp::AskNotPending(helpChain, asking))
+    {
+        static DWORD nLastAsking = 0;
+        if (GetTickCount() - nLastAsking > 4000)
+        {
+            nLastAsking = GetTickCount();
+            CMissionHints::Help("Esperando que " + asking + " decida si ayuda en la mision.");
         }
         return false;
     }
