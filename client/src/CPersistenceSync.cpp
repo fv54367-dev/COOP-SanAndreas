@@ -72,6 +72,10 @@ void CPersistenceSync::Apply(const Packets::Players::SPersistData& data)
 {
     // money, weapons, health, position and the rest belong to the game's own save slots,
     // the server only keeps the clothes and the physique
+    // the game's save already has both: the server's copy brought back a failed mission's mask (testeo 16-11)
+    if (!CConfigLoader::ms_bServerClothesRestore)
+        return;
+
     CPlayerPed* pPlayer = FindPlayerPed(0);
 
     CStats::StatTypesFloat[STAT_FAT] = data.floatStats[STAT_FAT];

@@ -166,6 +166,7 @@ void CConfigLoader::Load()
     ms_bJustBusinessNoMarkerWait = readBool("just-business-no-marker-wait");
     ms_bHighStakesCoop = readBool("high-stakes-coop");
     ms_bHighStakesGuestNotice = readBool("high-stakes-guest-notice");
+    ms_bServerClothesRestore = readBool("server-clothes-restore");
     ms_bGuestClearAreaKeepCar = readBool("guest-clear-area-keep-car");
     ms_bHighStakesNoGridWait = readBool("high-stakes-no-grid-wait");
     ms_bHighStakesGuestBlips = readBool("high-stakes-guest-blips");
@@ -418,6 +419,9 @@ void CConfigLoader::Save()
         CONFIG_SECTION.c_str(), "high-stakes-coop", ms_bHighStakesCoop ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "high-stakes-guest-notice", ms_bHighStakesGuestNotice ? "true" : "false",
+        ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "server-clothes-restore", ms_bServerClothesRestore ? "true" : "false",
         ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "guest-clear-area-keep-car", ms_bGuestClearAreaKeepCar ? "true" : "false",

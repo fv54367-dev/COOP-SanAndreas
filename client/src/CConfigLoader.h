@@ -69,6 +69,7 @@ private:
         {"just-business-no-marker-wait", "true"},
         {"high-stakes-coop", "true"},
         {"high-stakes-guest-notice", "true"},
+        {"server-clothes-restore", "false"},
         {"guest-clear-area-keep-car", "true"},
         {"high-stakes-no-grid-wait", "true"},
         {"high-stakes-guest-blips", "true"},
@@ -246,6 +247,7 @@ public:
     static inline bool ms_bCoopHomeInvasion = true;
     static inline bool ms_bHighStakesCoop = true;
     static inline bool ms_bHighStakesGuestNotice = true;
+    static inline bool ms_bServerClothesRestore = false;
     static inline bool ms_bGuestClearAreaKeepCar = true;
     static inline bool ms_bHighStakesNoGridWait = true;
     static inline bool ms_bHighStakesGuestBlips = true;
