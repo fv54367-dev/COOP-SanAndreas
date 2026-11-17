@@ -138,6 +138,7 @@ void CConfigLoader::Load()
     ms_bShopClerkFail = readBool("mission-shop-clerk-fail");
     ms_bPerfTelemetry = readBool("perf-telemetry");
     ms_bWeaponModelRelease = readBool("weapon-model-release");
+    ms_bAnimDestroyNotify = readBool("anim-destroy-notify");
     ms_bRecruitDismissSync = readBool("recruit-dismiss-sync");
     ms_bRecruitAllPlayers = readBool("recruit-all-players");
     ms_bDanceGuestStory = readBool("dance-guest-story");
@@ -715,6 +716,8 @@ void CConfigLoader::Save()
         CONFIG_SECTION.c_str(), "vs-race-sync", ms_bVsRaceSync ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "weapon-model-release", ms_bWeaponModelRelease ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "anim-destroy-notify", ms_bAnimDestroyNotify ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "settings-version", "1", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "cheat-menu-key",
         ("F" + std::to_string(CCheatMenu::ms_nToggleKey - VK_F1 + 1)).c_str(), ms_sDataPath.c_str());

@@ -157,6 +157,7 @@ private:
 		{"coop-badlands", "true"},
 		{"coop-car-gunners", "true"},
 		{"coop-countryside", "true"},
+		{"anim-destroy-notify", "true"},
 		{"coop-gray-imports", "true"},
 		{"coop-green-sabre", "true"},
 		{"coop-just-business", "true"},
@@ -277,6 +278,9 @@ public:
     static inline bool ms_bPerfTelemetry = true;
     // weapon models asked for by GiveWeaponByPacket are released after use; false = pinned KEEP_IN_MEMORY as before
     static inline bool ms_bWeaponModelRelease = true;
+    // a destroyed clump calls the finish/delete callback of its animations first, like UpdateBlend does, so the tasks
+    // holding them drop their pointers; false = deleted silently as before
+    static inline bool ms_bAnimDestroyNotify = true;
     static inline bool ms_bRecruitDismissSync = true;
     // recruit-all-players: every player may recruit Grove members (the vanilla "group stuff disabled" flag a script left
     // on a guest is cleared while no mission is running); false = as before

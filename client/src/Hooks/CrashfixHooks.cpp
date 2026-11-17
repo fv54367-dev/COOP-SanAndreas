@@ -409,6 +409,50 @@ static void __declspec(naked) CEventVehicleHitAndRun__Clone_NullGuard()
     }
 }
 
+// A task keeps a raw pointer to its animation and learns it is gone through the finish/delete callback, which
+// CAnimBlendAssociation::UpdateBlend (0x4D1490) calls before deleting a faded animation. Destroying the clump
+// (ClumpAnimDestruct 0x4D6110 -> RpAnimBlendClumpRemoveAllAssociations 0x4D6C00) deletes them without calling it, so a
+// task that outlives the clump keeps a dangling pointer and its later MakeAbortable(IMMEDIATE) writes BlendDelta=-1000
+// and SetDefaultFinishCallback into freed memory. 2026-11-17 crash 0x81214A: exactly those 4 fields (+0x1C, +0x30,
+// +0x34 = 0x4D1390 DefaultAnimCB, +0x38) over the material list of the merit being created. Same order as UpdateBlend:
+// callback, then the default one. A ped being deleted already lost its tasks (their destructors reset the callbacks).
+static void __cdecl ClumpAnimDestruct_RemoveAll_Hook(RpClump* clump)
+{
+    if (CConfigLoader::ms_bAnimDestroyNotify && clump)
+    {
+        using AnimCB = void(__cdecl*)(void*, void*);
+        const int dataOffset = *(int*)0xB5F878;  // RpAnimBlendClump plugin offset
+        uintptr_t** clumpData = *(uintptr_t***)((uint8_t*)clump + dataOffset);
+        int notified = 0;
+        uintptr_t firstCallback = 0;
+        uintptr_t* link = clumpData ? *clumpData : nullptr;
+        while (link)
+        {
+            uintptr_t* next = (uintptr_t*)*link;
+            uint8_t* assoc = (uint8_t*)link - 4;
+            int& type = *(int*)(assoc + 0x30);
+            uintptr_t& callback = *(uintptr_t*)(assoc + 0x34);
+            void*& callbackData = *(void**)(assoc + 0x38);
+            if ((type == 1 || type == 2) && callback != 0 && callback != 0x4D1390)
+            {
+                const AnimCB fn = (AnimCB)callback;
+                void* data = callbackData;
+                if (!firstCallback)
+                    firstCallback = callback;
+                fn(assoc, data);
+                type = 1;
+                callback = 0x4D1390;
+                callbackData = nullptr;
+                notified++;
+            }
+            link = next;
+        }
+        if (notified)
+            CMissionMirror::LogEventf("anim-destroy-notify count=%d first=%08X", notified, (unsigned)firstCallback);
+    }
+    plugin::Call<0x4D6C00>(clump);
+}
+
 void CrashfixHooks::InjectHooks()
 {
     patch::SetPointer(0x85AFA8 + 4 * 4, CEventVehicleHitAndRun__Clone_NullGuard);
@@ -427,6 +471,7 @@ void CrashfixHooks::InjectHooks()
     patch::RedirectJump(0x4AB420, CEventGroup__Add_NullEventGuard);
     patch::RedirectJump(0x4AB557, CEventGroup__Add_CloneNullGuard);
     patch::RedirectCall(0x47B15A, GetCharAreaVisible_GetAt_Hook);
+    patch::RedirectCall(0x4D6123, ClumpAnimDestruct_RemoveAll_Hook);
 
     // CPools::Initialise (0x550F10) builds the ColModel pool with 10150 slots (gta-reversed Pools.cpp); the map alone keeps
     // ~10050 in use, so the few vehicle/object models with a collision inside their dff (CCollisionPlugin) fill it and
