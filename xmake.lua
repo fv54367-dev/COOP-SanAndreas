@@ -40,7 +40,6 @@ target("client", function()
     add_files("client/src/PacketHandlers/*.cpp")
     add_files("client/src/Debug/*.cpp")
     add_files("client/src/UI/*.cpp")
-    add_files("client/src/Editor/*.cpp")
     add_files("client/version.rc")
 
     add_headerfiles("client/src/*.h")

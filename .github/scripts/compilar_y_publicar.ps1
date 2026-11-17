@@ -48,7 +48,7 @@ $stage = Join-Path $env:RUNNER_TEMP 'paquete'
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 foreach ($f in "$bld/CoopAndreasSA.dll", "$bld/CoopSA.exe", "$bld/CoopSA.exe.manifest",
                "$bld/server.exe", 'scm/main.scm', 'scm/script.img',
-               'scm/reglas_misiones.txt', 'dist/MODO_SCRIPTS_ORIGINALES.bat', 'dist/ACTUALIZAR.bat') {
+               'dist/MODO_SCRIPTS_ORIGINALES.bat', 'dist/ACTUALIZAR.bat') {
     Copy-Item -LiteralPath $f -Destination $stage
 }
 Copy-Item -LiteralPath "$bld/proxy.dll" -Destination (Join-Path $stage 'eax.dll')

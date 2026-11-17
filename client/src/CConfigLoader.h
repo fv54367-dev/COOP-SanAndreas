@@ -24,8 +24,6 @@ private:
 		{"smooth-onfoot", "true"},
 		{"settings-version", "1"},
 		{"cheat-menu-key", "F8"},
-		{"mission-editor", "false"},
-		{"mission-rules-data", "true"},
 		{"high-sync-rate", "true"},
 		{"adaptive-jitter-buffer", "true"},
 		{"npc-distance-rate", "true"},
@@ -210,8 +208,6 @@ public:
     // a guest left black by a mirrored fade-out gets the screen back after a few seconds
     static inline bool ms_bFadeGuard = true;
     static inline bool ms_bSkipDeathArrestHelp = false;
-    static inline bool ms_bMissionRulesData = true;  // CMissionRulesData: coop rules read from CoopAndreaseglas_*.txt
-    static inline bool ms_bMissionEditor = false;  // F5 mission editor (Editor/CMissionEditor), off by default
     static inline bool ms_bDanceTeamScore = true;
     // F8 menu lists every cheat of the game (92 slots); false = the short list of before
     static inline bool ms_bCheatMenuAll = true;
