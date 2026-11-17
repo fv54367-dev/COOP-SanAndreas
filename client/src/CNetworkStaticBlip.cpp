@@ -415,7 +415,22 @@ static void FollowHostIntro(const Packets::Blips::StaticBlipsSnapshot& packet)
         atIntro |= fabsf(blip.position.x - intro[0]) < 3.0f && fabsf(blip.position.y - intro[1]) < 3.0f;
         atRyder |= fabsf(blip.position.x - ryder[0]) < 3.0f && fabsf(blip.position.y - ryder[1]) < 3.0f;
     }
-    const int hostCounter = atIntro ? 0 : atRyder ? 1 : 2;
+    // neither icon is no proof he is past both: his intro icon is a coordinate blip of INT that the snapshot
+    // does not carry, so right after the prologue the guest jumped to 2 and lost his CJ icon (testeo 17-11).
+    // Past Ryder needs the host's Sweet chain started too
+    int hostCounter = atIntro ? 0 : atRyder ? 1 : -1;
+    if (hostCounter < 0)
+    {
+        for (auto networkPlayer : CNetworkPlayerManager::m_pPlayers)
+            if (networkPlayer && networkPlayer->m_bIsHost && networkPlayer->m_anChainProgress[0] != CMissionMode::CHAIN_UNKNOWN &&
+                networkPlayer->m_anChainProgress[0] >= 1)
+                hostCounter = 2;
+        if (hostCounter < 0)
+        {
+            lastSeen = -1;
+            return;
+        }
+    }
     if (!anyContact || hostCounter <= counter)
     {
         lastSeen = -1;

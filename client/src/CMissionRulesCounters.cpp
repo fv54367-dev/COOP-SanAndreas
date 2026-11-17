@@ -121,9 +121,11 @@ void CMissionRulesCounters::Process()
 {
     auto& launchers = s_aGuestLaunchers;
     static unsigned int lastFrame = 0;
+    static unsigned int session = 1;  // a new one at every game started or loaded
     const unsigned int frame = CTimer::m_FrameCounter;
     if (frame < lastFrame)
     {
+        ++session;
         for (auto& launcher : launchers)
         {
             launcher.searched = false;
@@ -164,13 +166,25 @@ void CMissionRulesCounters::Process()
     {
         static int intOffset = -2;
         static DWORD intLastStart = 0;
-        if (frame < 2)
+        // a new game: MAIN starts INT a moment after the connection, and ours made a second one (PROLOG1 loaded twice,
+        // its baggage belt undrawn, testeo 17-11). Only an INT seen and gone, or never there after a minute, is started
+        static bool intSeen = false;
+        static DWORD sessionStart = 0;
+        static unsigned int intSession = 0;
+        if (intSession != session)
+        {
+            intSession = session;
             intOffset = -2;
+            intSeen = false;
+            sessionStart = GetTickCount();
+        }
         const int intro = *reinterpret_cast<int*>(&CTheScripts::ScriptSpace[1792]);
         bool intRuns = false;
         for (auto script = CTheScripts::pActiveScripts; script && !intRuns; script = script->m_pNext)
             intRuns = _strnicmp(script->m_szName, "INT", 8) == 0;
-        if ((intro == 0 || intro == 1) && !intRuns && CTheScripts::pIdleScripts && GetTickCount() - intLastStart >= 5000)
+        intSeen |= intRuns;
+        if ((intro == 0 || intro == 1) && !intRuns && (intSeen || GetTickCount() - sessionStart >= 60000) &&
+            CTheScripts::pIdleScripts && GetTickCount() - intLastStart >= 5000)
         {
             if (intOffset == -2)
             {

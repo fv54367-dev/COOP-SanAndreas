@@ -106,6 +106,14 @@ static void __cdecl CTheZones__Update_Hook()
     GetPacketFactory().Send(keyPressed);
 }
 
+// the black bars of cutscenes and widescreen scenes (gta-reversed Camera.cpp CCamera::DrawBordersForWideScreen, 0x514860):
+// asked off by the owner (testeo 17-11: they hid half of every cutscene); cutscene-black-bars=true brings them back
+void __fastcall CCamera__DrawBordersForWideScreen_Hook(CCamera* camera, void*)
+{
+    if (CConfigLoader::ms_bCutsceneBlackBars)
+        plugin::CallMethod<0x514860, CCamera*>(camera);
+}
+
 void CCutsceneMgr__StartCutscene_Hook()
 {
     CCutsceneMgr::StartCutscene();
@@ -190,6 +198,10 @@ void GameHooks::InjectHooks()
 
     CCutsceneSkipVote::InjectHooks();
     CCutsceneHidden::InjectHooks();
+
+    // the only call of the frame (Render2dStuff); the other one is the credits'
+    if (*reinterpret_cast<unsigned char*>(0x53E2B4) == 0xE8 && injector::GetBranchDestination(0x53E2B4).as_int() == 0x514860)
+        patch::RedirectCall(0x53E2B4, CCamera__DrawBordersForWideScreen_Hook);
 
     patch::RedirectJump(PURECALL, __purecall_Hook);
 

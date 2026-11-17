@@ -183,6 +183,7 @@ void CConfigLoader::Load()
     ms_bCutsceneKeepSeat = readBool("cutscene-keep-seat");
     ms_bHighStakesTeamResult = readBool("high-stakes-team-result");
     ms_bCutsceneHideExtras = readBool("cutscene-hide-extras");
+    ms_bCutsceneBlackBars = readBool("cutscene-black-bars", "false");
     ms_bAutoReconnect = readBool("auto-reconnect");
     ms_bClearMessages = readBool("clear-messages");
     ms_bNativeMarkers = readBool("native-markers");
@@ -638,6 +639,8 @@ void CConfigLoader::Save()
         CONFIG_SECTION.c_str(), "coop-photos", ms_bCoopPhotos ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "cutscene-hide-extras", ms_bCutsceneHideExtras ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "cutscene-black-bars", ms_bCutsceneBlackBars ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "cutscene-partner-smooth", ms_bCutscenePartnerSmooth ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(

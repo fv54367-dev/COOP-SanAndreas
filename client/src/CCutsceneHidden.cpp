@@ -107,6 +107,17 @@ void AreaReport(const char* phase) {
     char byArea[256]{};
     for (int a = 0, n = 0; a < 256; ++a)
         if (areas[a]) n += sprintf_s(byArea + n, sizeof(byArea) - n, "%d:%u ", a, areas[a]);
+    // the baggage belt of PROLOG1 (BAG_BELT2 3969, 62 m from the offset) and its reclaim (3971): reported not drawn
+    unsigned belts = 0;
+    VisitWorld([&](auto* entity, int) {
+        if (entity->m_nModelIndex != 3969 && entity->m_nModelIndex != 3971) return;
+        ++belts;
+        const auto pos = entity->GetPosition();
+        Log("cutscene-area-model phase=%s model=%u type=%d area=%u visible=%d rw=%p pos=%.1f,%.1f,%.1f", phase,
+            entity->m_nModelIndex, (int)entity->m_nType, entity->m_nAreaCode, entity->m_bIsVisible, entity->m_pRwObject,
+            pos.x, pos.y, pos.z);
+    });
+    if (!belts) Log("cutscene-area-model phase=%s none", phase);
     auto* player = FindPlayerPed(0);
     Log("cutscene-area phase=%s currArea=%d offset=%.1f,%.1f,%.1f playerArea=%d near=%u in-area=%u visible=%u loaded=%u drawable=%u by-area=%s",
         phase, CGame::currArea, offset.x, offset.y, offset.z, player ? (int)player->m_nAreaCode : -1, total, inArea, visible,

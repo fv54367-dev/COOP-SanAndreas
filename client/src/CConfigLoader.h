@@ -79,6 +79,7 @@ private:
         {"high-stakes-finish-notice", "true"},
         {"high-stakes-end-cleanup", "true"},
         {"cutscene-hide-extras", "true"},
+        {"cutscene-black-bars", "false"},
 		{"auto-reconnect", "true"},
 		{"clear-messages", "true"},
 		{"native-markers", "true"},
@@ -302,6 +303,7 @@ public:
     static inline bool ms_bJustBusinessBikeEscort = true;
     static inline bool ms_bJustBusinessNoMarkerWait = true;
     static inline bool ms_bCutsceneHideExtras = true;
+    static inline bool ms_bCutsceneBlackBars = false;
     static inline bool ms_bMissionGuestCounts = true;
     static inline bool ms_bMissionGuestActions = true;
     static inline bool ms_bCoopPhotos = true;

@@ -75,7 +75,10 @@ class COpCodeSync
 {
 public:
 	static inline bool ms_bSyncingEnabled = true;
-	static inline bool ms_bLoadingCutscene = true;
+	// a start_cutscene of the authority that came before our copy finished loading. It started true: right after the
+	// connection, with a cutscene of our own loaded (PROLOG1 of a new game), Main started it a second time and
+	// SetupCutsceneToStart raised its offset 1 m more: CJ and the suitcase over the carousel, out of the shot (testeo 17-11)
+	static inline bool ms_bLoadingCutscene = false;
 	static inline bool ms_abLoadingMissionAudio[4];
 	
     static inline uint32_t ms_iFreeSyncedScript = 0;
