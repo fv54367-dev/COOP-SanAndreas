@@ -229,6 +229,10 @@ bool HoldInteriorEntry(CRunningScript* script)
         else if (area != s_entryLastArea &&
                  std::find(s_entryDone.begin(), s_entryDone.end(), area) == s_entryDone.end())
         {
+            // the script's own way in first (interior shown, faded back in): held in the middle of it, the host stayed
+            // black until the give-up (Home Invasion, testeo 17-11)
+            if (CGame::currArea != area || TheCamera.m_bFading || CDraw::FadeValue > 20)
+                return false;
             s_entryDone.push_back(area);
             s_entryHolding = true;
             s_entryArea = area;

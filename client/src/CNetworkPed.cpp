@@ -156,23 +156,56 @@ static CAnimBlendAssociation* FindRelevantAssociation(CPed* ped)
 // D npc-named-anim-sync: the animation of a named IFP block (dancing, bar, strip, casino, food...) has no assoc
 // group: it is the one with the biggest blend whose group is -1 and whose hierarchy is known. Partial associations
 // (look / walk overlays) are never replicated.
+// the block a hierarchy belongs to, by its slot in CAnimManager::ms_aAnimations (each block owns the range
+// startAnimation .. +animationCount); m_nAnimBlockId as a fallback
+static int BlockOfHierarchy(const CAnimBlendHierarchy* hierarchy)
+{
+    const int index = static_cast<int>(hierarchy - CAnimManager::ms_aAnimations);
+    for (int i = 0; i < CAnimManager::ms_numAnimBlocks; i++)
+    {
+        const CAnimBlock& block = CAnimManager::ms_aAnimBlocks[i];
+        if (block.bLoaded && index >= block.startAnimation && index < block.startAnimation + block.animationCount)
+            return i;
+    }
+    return hierarchy->m_nAnimBlockId;
+}
+
+static bool IsNamedAnimTask(CPed* ped)
+{
+    if (ped->m_pIntelligence == nullptr)
+        return false;
+    CTask* task = ped->m_pIntelligence->m_TaskMgr.m_aPrimaryTasks[TASK_PRIMARY_PRIMARY];
+    for (; task != nullptr; task = task->GetSubTask())
+    {
+        if (task->GetTaskType() == TASK_SIMPLE_NAMED_ANIM)
+            return true;
+    }
+    return false;
+}
+
 static CAnimBlendAssociation* FindNamedAssociation(CPed* ped)
 {
     if (ped == nullptr || ped->m_pRwClump == nullptr)
         return nullptr;
+
+    // a script's TASK_PLAY_ANIM in an interior (Home Invasion's sleeping owner, testeo 17-11): the script may play it
+    // as a partial one (INT_HOUSE BED_Loop_R, flags 0x401B) and it was never sent: the copy stood
+    const bool namedTask = CConfigLoader::ms_bInteriorPopulationSync && ped->m_nAreaCode != 0 && IsNamedAnimTask(ped);
 
     CAnimBlendAssociation* best = nullptr;
     for (CAnimBlendAssociation* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc;
          assoc = RpAnimBlendGetNextAssociation(assoc))
     {
         if ((!assoc->m_bPlaying && !(CConfigLoader::ms_bInteriorPopulationSync && ped->m_nAreaCode != 0)) ||
-            assoc->m_fBlendAmount <= 0.0f || assoc->m_bPartial ||
+            assoc->m_fBlendAmount <= 0.0f || (assoc->m_bPartial && !(namedTask && assoc->m_fBlendAmount > 0.5f)) ||
             (CConfigLoader::ms_bInteriorPopulationSync && ped->m_nAreaCode != 0 && assoc->m_fBlendDelta < 0.0f))
             continue;
-        if (assoc->m_nAnimGroup != NAMED_ANIM_GROUP || assoc->m_pHierarchy == nullptr)
+        if (assoc->m_pHierarchy == nullptr)
             continue;
-        if (assoc->m_pHierarchy->m_nAnimBlockId < 0 ||
-            assoc->m_pHierarchy->m_nAnimBlockId >= CAnimManager::ms_numAnimBlocks)
+        const int blockId = BlockOfHierarchy(assoc->m_pHierarchy);
+        if (assoc->m_nAnimGroup != NAMED_ANIM_GROUP)
+            continue;
+        if (blockId < 0 || blockId >= CAnimManager::ms_numAnimBlocks)
             continue;
         if (best == nullptr || assoc->m_fBlendAmount > best->m_fBlendAmount)
             best = assoc;
@@ -888,12 +921,14 @@ void CNetworkPed::SendAnimSet()
     Packets::Peds::PedAnimSet packet{};
     packet.pedid = m_pedId;
     float blends[Packets::Peds::PedAnimSet::MAX_ANIMS]{};
+    CAnimBlendAssociation* named = CConfigLoader::ms_bNpcNamedAnimSync ? FindNamedAssociation(ped) : nullptr;
 
     for (CAnimBlendAssociation* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc;
          assoc = RpAnimBlendGetNextAssociation(assoc))
     {
-        // the named ones (no assoc group) travel with npc-named-anim-sync
-        if (assoc->m_nAnimGroup == NAMED_ANIM_GROUP || assoc->m_pHierarchy == nullptr || assoc->m_fBlendAmount < 0.02f)
+        // the named ones (no assoc group, or a script's one) travel with npc-named-anim-sync
+        if (assoc->m_nAnimGroup == NAMED_ANIM_GROUP || assoc == named || assoc->m_pHierarchy == nullptr ||
+            assoc->m_fBlendAmount < 0.02f)
             continue;
 
         const int id = NormalizeAnimId(assoc->m_nAnimGroup, assoc->m_nAnimId);
@@ -1613,10 +1648,37 @@ void CNetworkPed::ApplyTaskState(Packets::Peds::PedTaskState& packet)
         m_bPendingTaskState = false;
     }
 
-    if (!ApplyTaskStateInternal(packet))
+    const bool applied = ApplyTaskStateInternal(packet);
+    if (!applied)
     {
         m_bPendingTaskState = true;
         m_nPendingTaskStateUntil = CConfigLoader::GetSyncTime() + TASK_SYNC_PENDING_TIMEOUT;
+    }
+
+    // interior copy diagnosis (testeo 17-11: Home Invasion's sleeping owner stood up on the guest): what arrived and
+    // what the copy plays now
+    const uint32_t now = CConfigLoader::GetSyncTime();
+    if (CConfigLoader::ms_bInteriorPopulationSync && ped->m_nAreaCode != 0 && ped->m_pRwClump &&
+        now - m_nInteriorDiagAt >= 10000)
+    {
+        m_nInteriorDiagAt = now;
+        CAnimBlendAssociation* top = nullptr;
+        for (CAnimBlendAssociation* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc;
+             assoc = RpAnimBlendGetNextAssociation(assoc))
+        {
+            if (!assoc->m_bPartial && (top == nullptr || assoc->m_fBlendAmount > top->m_fBlendAmount))
+                top = assoc;
+        }
+        const char* topBlock = "";
+        if (top && top->m_pHierarchy && BlockOfHierarchy(top->m_pHierarchy) >= 0 &&
+            BlockOfHierarchy(top->m_pHierarchy) < CAnimManager::ms_numAnimBlocks)
+            topBlock = CAnimManager::ms_aAnimBlocks[BlockOfHierarchy(top->m_pHierarchy)].szName;
+        CMissionMirror::LogEventf("interior-anim-copy model=%d task=%d has=%d named=%d block=%.15s hash=%08X applied=%d "
+            "synced=%d top-group=%d top-block=%.15s top-blend=%.2f top-playing=%d local-area=%d",
+            ped->m_nModelIndex, (int)packet.taskType, packet.hasAnim ? 1 : 0, packet.namedAnim ? 1 : 0, packet.animBlock,
+            packet.animHash, applied ? 1 : 0, m_pSyncedAnim ? 1 : 0, top ? (int)top->m_nAnimGroup : -2, topBlock,
+            top ? top->m_fBlendAmount : 0.0f, top ? (int)top->m_bPlaying : 0,
+            FindPlayerPed(0) ? (int)FindPlayerPed(0)->m_nAreaCode : -1);
     }
 }
 
@@ -1761,7 +1823,7 @@ void CNetworkPed::UpdateTaskSync()
         {
             if (CAnimBlendAssociation* named = FindNamedAssociation(ped))
             {
-                CAnimBlock& block = CAnimManager::ms_aAnimBlocks[named->m_pHierarchy->m_nAnimBlockId];
+                CAnimBlock& block = CAnimManager::ms_aAnimBlocks[BlockOfHierarchy(named->m_pHierarchy)];
                 memset(animBlock, 0, sizeof(animBlock));
                 strncpy_s(animBlock, sizeof(animBlock), block.szName, _TRUNCATE);
 
@@ -1779,7 +1841,9 @@ void CNetworkPed::UpdateTaskSync()
 
     // interior-population-sync diagnosis (testeo 14-11: the diners stood on their chairs for the players that came in
     // after the owner): the strongest full-body animation of an interior ped next to another player, and what goes out
-    if (CConfigLoader::ms_bInteriorPopulationSync && m_bInteriorPopulation && now - m_nInteriorDiagAt >= 10000 &&
+    // mission peds of an interior too (Home Invasion's sleeping owner stood up on the guest, testeo 17-11)
+    if (CConfigLoader::ms_bInteriorPopulationSync && (m_bInteriorPopulation || ped->m_nAreaCode != 0) &&
+        now - m_nInteriorDiagAt >= 10000 &&
         IsNearAnyNetworkPlayer(ped, 30.0f))
     {
         m_nInteriorDiagAt = now;
@@ -1791,9 +1855,9 @@ void CNetworkPed::UpdateTaskSync()
                 top = assoc;
         }
         const char* topBlock = "";
-        if (top && top->m_pHierarchy && top->m_pHierarchy->m_nAnimBlockId >= 0 &&
-            top->m_pHierarchy->m_nAnimBlockId < CAnimManager::ms_numAnimBlocks)
-            topBlock = CAnimManager::ms_aAnimBlocks[top->m_pHierarchy->m_nAnimBlockId].szName;
+        if (top && top->m_pHierarchy && BlockOfHierarchy(top->m_pHierarchy) >= 0 &&
+            BlockOfHierarchy(top->m_pHierarchy) < CAnimManager::ms_numAnimBlocks)
+            topBlock = CAnimManager::ms_aAnimBlocks[BlockOfHierarchy(top->m_pHierarchy)].szName;
         CMissionMirror::LogEventf("interior-anim-owner model=%d task=%d has=%d named=%d group=%d id=%d block=%.15s "
             "top-group=%d top-id=%d top-block=%.15s top-blend=%.2f top-playing=%d top-flags=%u",
             ped->m_nModelIndex, (int)taskType, hasAnim ? 1 : 0, namedAnim ? 1 : 0, (int)animGroup, (int)animId,

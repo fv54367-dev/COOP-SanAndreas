@@ -436,7 +436,9 @@ void ProcessSceneGuests(CPed* principal, int mission) {
             continue;
         }
         auto& g = TrackGuest(p->m_playerId, ped);
-        SetSceneHidden(g, ped, CoversCamera(Chest(ped), Chest(principal)), p->m_playerId, "covers-camera");
+        // cutscene-show-others off (F1 "Un solo CJ"): the other players are not shown in this screen's scenes either
+        if (!CConfigLoader::ms_bCutsceneShowOthers) SetSceneHidden(g, ped, true, p->m_playerId, "single-cj");
+        else SetSceneHidden(g, ped, CoversCamera(Chest(ped), Chest(principal)), p->m_playerId, "covers-camera");
     }
 }
 }

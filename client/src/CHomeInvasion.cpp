@@ -8,6 +8,7 @@
 #include "COpCodeSync.h"
 #include "Commands/CommandHooks.h"
 #include "network/packets/home_invasion.h"
+#include "SceneCompat/Script.h"
 #include <CUserDisplay.h>
 #include <algorithm>
 #include <cmath>
@@ -35,7 +36,7 @@ struct Input { uint32_t sequence = 0; DWORD at = 0; uint32_t noiseTotal = 0; flo
 // One slot per crate of the script: every player carries his own crate at the same time.
 struct Applied { uint32_t crate = 0; playerid_t holder; DWORD liftedAt = 0; bool liftable = false; CVector position; uint8_t area = 0; };
 Applied applied[7];
-bool wasEnter = false, atTruck = false, woken = false;
+bool wasEnter = false, atTruck = false, woken = false, exitHouse = false;
 int barSlot = -1;
 float outsideNoise = 0;
 std::map<playerid_t, Input> inputs;
@@ -407,7 +408,7 @@ void EndOwner()
     }
     ReleaseAll();
     for (auto& holder : session.holders) holder = playerid_t{};
-    ClearBar(); outsideNoise = 0; woken = false;
+    ClearBar(); outsideNoise = 0; woken = false; exitHouse = false;
     active = nullptr; inputs.clear();
 }
 bool Original(CRunningScript* s)
@@ -480,6 +481,7 @@ void CHomeInvasion::OnCommandExecuted(CRunningScript* s, uint16_t op)
     }
     *reinterpret_cast<int*>(&CTheScripts::ScriptSpace[noiseVar]) = static_cast<int>(value);
 }
+CNetworkPlayer* HomeInvasionOwner();
 void CHomeInvasion::Process()
 {
     auto me = FindPlayerPed(0);
@@ -490,6 +492,34 @@ void CHomeInvasion::Process()
         return;
     }
     const DWORD now = GetTickCount();
+    // guest outside while the owner is in the house: the control the script took at the door comes back (testeo 17-11)
+    if (auto owner = HomeInvasionOwner(); owner && owner->m_pPed && me->m_nAreaCode == 0 && owner->m_pPed->m_nAreaCode != 0 &&
+        !CCutsceneMgr::ms_running && CPad::GetPad(0)->DisablePlayerControls)
+    {
+        CPad::GetPad(0)->DisablePlayerControls = 0;
+        TheCamera.SetWideScreenOff();
+        CMissionMirror::LogEventf("home-invasion guest-control-back");
+    }
+    // the sleeper woke up and the script put the owner outside (ryder1.sc: 2808.78,-1178.05): the guest inside goes
+    // out beside him instead of staying in the house (testeo 17-11)
+    if (exitHouse)
+    {
+        exitHouse = false;
+        if (me->m_nAreaCode != 0 && !CCutsceneMgr::ms_running)
+        {
+            using scene_game::script::Cmd;
+            const int ref = CPools::GetPedRef(me);
+            Cmd(0x0792).I(ref).Run();                                   // CLEAR_CHAR_TASKS_IMMEDIATELY
+            Cmd(0x04BB).I(0).Run();                                     // SET_AREA_VISIBLE
+            Cmd(0x0860).I(ref).I(0).Run();                              // SET_CHAR_AREA_VISIBLE
+            Cmd(0x03CB).F(2810.0f).F(-1178.9f).F(24.4f).Run();          // LOAD_SCENE
+            Cmd(0x00A1).I(ref).F(2810.0f).F(-1178.9f).F(24.4f).Run();   // SET_CHAR_COORDINATES
+            Cmd(0x0173).I(ref).F(231.7f).Run();                         // SET_CHAR_HEADING
+            Cmd(0x0373).Run();                                          // SET_CAMERA_BEHIND_PLAYER
+            Cmd(0x02EB).Run();                                          // RESTORE_CAMERA_JUMPCUT
+            CMissionMirror::LogEventf("home-invasion guest-exit-house");
+        }
+    }
     if (CCoopMission::IsScriptAuthority())
     {
         CleanGuest();
@@ -646,6 +676,51 @@ bool CHomeInvasion::SuppressGather(CRunningScript* script)
     auto me = FindPlayerPed(0);
     const int stage = CTheScripts::LocalVariablesForCurrentMission[51].iParam;
     return (me && me->m_nAreaCode != 0) || (stage >= 3 && stage <= 6);
+}
+// the owner's interior shown to a guest still outside drew an empty world around him (testeo 17-11); the house door
+// (an entry-exit) sets his own area when he walks in or out
+CNetworkPlayer* HomeInvasionOwner()
+{
+    if (!Enabled() || CCoopMission::IsScriptAuthority() || COpCodeSync::IsLocalMissionRunning())
+        return nullptr;
+    for (auto p : CNetworkPlayerManager::m_pPlayers)
+        if (Owner(p) && p->m_nRunningMission == 24)
+            return p;
+    return nullptr;
+}
+void CHomeInvasion::OnOwnerAreaVisible(int area)
+{
+    auto me = FindPlayerPed(0);
+    if (area == 0 && me && me->m_nAreaCode != 0)
+        exitHouse = true;
+}
+bool CHomeInvasion::SkipRemoteAreaVisible()
+{
+    return HomeInvasionOwner() != nullptr;
+}
+// the house's fixed camera replayed on a guest still outside left him looking at the interior's empty spot (testeo 17-11)
+bool CHomeInvasion::SkipRemoteCamera(uint16_t opcode)
+{
+    switch (opcode)
+    {
+    case 0x015F: case 0x0160: case 0x02EB: case 0x0373: case 0x0920: case 0x0925: case 0x092F: case 0x0930: case 0x0936:
+    case COMMAND_POINT_CAMERA_AT_CHAR: case COMMAND_POINT_CAMERA_AT_CAR: case COMMAND_ATTACH_CAMERA_TO_VEHICLE:
+    case COMMAND_RESTORE_CAMERA: case COMMAND_CAMERA_SET_LERP_FOV: case COMMAND_CAMERA_PERSIST_FOV:
+        break;
+    // only the ones that would take them away: an "on" for the control (or "off" for the bars) given at the door, before
+    // the owner went in, has to come through or the guest stays frozen (testeo 17-11)
+    case 0x01B4:
+        if (CPad::GetPad(0)->DisablePlayerControls) return false;
+        break;
+    case COMMAND_SWITCH_WIDESCREEN:
+        if (TheCamera.m_bWideScreenOn) return false;
+        break;
+    default:
+        return false;
+    }
+    auto owner = HomeInvasionOwner();
+    auto me = FindPlayerPed(0);
+    return owner && owner->m_pPed && me && me->m_nAreaCode != owner->m_pPed->m_nAreaCode;
 }
 bool CHomeInvasion::FilterCompare(CRunningScript* s, uint16_t op, bool state, bool& handled)
 {

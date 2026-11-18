@@ -317,7 +317,8 @@ bool SceneRule(Spot& out) {
 
 void Hold(scene_game::CPed* ped, const Spot& requested) {
     Spot s = requested;
-    bool ruled = SceneRule(s);
+    // cutscene-show-others off (F1 "Un solo CJ"): a hidden copy stays hidden, the per-scene rules do not show it
+    bool ruled = (requested.pose == POSE_HIDDEN && !CConfigLoader::ms_bCutsceneShowOthers) ? false : SceneRule(s);
     if ((s.pose==POSE_WALK || s.pose==POSE_WAY) && !MocapWalkCount()) {
         Spot fallback=s; fallback.pose=POSE_STAND; fallback.walk=false;
         auto cj=CutsceneCj();

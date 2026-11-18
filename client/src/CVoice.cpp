@@ -23,7 +23,8 @@ std::deque<Pcm> captured;
 std::map<playerid_t, std::deque<Pcm>> incoming;
 struct Heard { uint16_t sequence = 0; bool hasSequence = false; DWORD time = 0; };
 std::map<playerid_t, Heard> heard;
-std::thread worker;
+// a pointer, never destroyed: a joinable std::thread destroyed at process exit (console close, no shutdownRwEvent) aborts
+std::thread* worker = nullptr;
 std::atomic<bool> running{false}, active{false}, wantMic{false}, micFailed{false};
 std::atomic<DWORD> lastGameTick{0};
 std::atomic<HWND> gameWindow{nullptr};
@@ -261,11 +262,12 @@ void CVoice::Process()
     else toggledOn = false;
     keyWasDown = keyDown;
     wantMic = canTalk && (CConfigLoader::ms_bVoiceToggle ? toggledOn.load() : keyDown);
-    if (enabled && !worker.joinable())
+    if (enabled && !(worker && worker->joinable()))
     {
         gameWindow = RsGlobal.ps->window;
         running = true;
-        worker = std::thread(AudioThread);
+        if (worker) delete worker;
+        worker = new std::thread(AudioThread);
     }
     if (micFailed && !warned)
     {
@@ -376,7 +378,7 @@ void CVoice::Shutdown()
     running = false;
     active = false;
     wantMic = false;
-    if (worker.joinable()) worker.join();
+    if (worker && worker->joinable()) worker->join();
     allowed = false;
     heard.clear();
 }

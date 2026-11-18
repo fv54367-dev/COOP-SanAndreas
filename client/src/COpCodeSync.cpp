@@ -1,4 +1,5 @@
 #include "CHighStakesRace.h"
+#include "CHomeInvasion.h"
 ///////////////////////////////////////////////////////////////////////////
 // Tornamic 2025-03-02:                                                  //
 //                                                                       //
@@ -1625,6 +1626,14 @@ void COpCodeSync::HandlePacket(const uint8_t* buffer, int bufferSize)
     if (CHighStakesRace::OwnMarkers() && (header.opcode == 0x01B4 || header.opcode == 0x0158 ||
         header.opcode == 0x0159 || header.opcode == 0x015F || header.opcode == 0x0160 ||
         header.opcode == 0x02EB || header.opcode == 0x0373 || header.opcode == COMMAND_SWITCH_WIDESCREEN)) return;
+
+    if ((header.opcode & 0x7FFF) == 0x04BB && CHomeInvasion::SkipRemoteAreaVisible())
+    {
+        CHomeInvasion::OnOwnerAreaVisible(scriptParamsBuffer[0].value);
+        return;
+    }
+    if (CHomeInvasion::SkipRemoteCamera(header.opcode & 0x7FFF))
+        return;
 
     // mission mirror layer, receiver side: the authority's text table for the keys of a replayed print; load_mission_text
     // only names that table (CMissionMirror::OnReplayingCommand)
