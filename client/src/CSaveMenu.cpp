@@ -2,6 +2,8 @@
 #include "CSaveMenu.h"
 #include "COpCodeSync.h"
 #include "CCoopMission.h"
+#include "CConfigLoader.h"
+#include "CMissionMirror.h"
 #include <CPickups.h>
 
 static constexpr int OFFSET_CREATED_SAVE_BLIPS = 3536;
@@ -95,12 +97,36 @@ void CSaveMenu::ProcessPickupWatchdog()
 // A savegame made by the old /guardar has $onmission = 1 with no mission: the player can't start missions and the save pickups are
 // gone for good. $onmission = 1 with no mission script, cutscene, coop mission or host mission behind it for 20 seconds in a row is
 // not a real mission: put it back to 0.
+// The phone scripts (MOB_*, always running) raise $onmission themselves while a call rings and plays, and cut the call the moment it
+// reads 0 again: that flag is real even though no mission script is behind it. A flag seen rising while the game runs gets a longer
+// wait when a phone script exists (a whole call fits); only a flag that was already on when first seen (old savegame) keeps the 20 s.
+static bool PhoneCallRunning()
+{
+    for (auto s = CTheScripts::pActiveScripts; s; s = s->m_pNext)
+        if (!_strnicmp(s->m_szName, "MOB_", 4))
+            return true;
+    return false;
+}
+
 void CSaveMenu::ProcessStuckMissionFlag()
 {
     const bool bFlagOn = CTheScripts::OnAMissionFlag != 0 && ScriptVar(CTheScripts::OnAMissionFlag) != 0;
     const bool bSomethingRuns = COpCodeSync::IsLocalMissionRunning() || CTheScripts::bAlreadyRunningAMissionScript ||
                                 CCutsceneMgr::ms_running || CCoopMission::IsActive() || ms_bHostOnMission || ms_bActive ||
                                 FrontEndMenuManager.m_bMenuActive;
+
+    // the flag only counts as raised by the phone when it was seen off for a while in normal play right before (a savegame is
+    // loaded from the menu, which resets that wait: an old save's flag keeps the 20 s)
+    static uint32_t s_nOffInPlaySince = 0;
+    static bool s_bRoseHere = false;
+    if (bFlagOn && !bSomethingRuns && s_nOffInPlaySince != 0 && GetTickCount() - s_nOffInPlaySince > 3000)
+        s_bRoseHere = true;
+    if (!bFlagOn)
+        s_bRoseHere = false;
+    if (bFlagOn || FrontEndMenuManager.m_bMenuActive)
+        s_nOffInPlaySince = 0;
+    else if (s_nOffInPlaySince == 0)
+        s_nOffInPlaySince = GetTickCount();
 
     if (!bFlagOn || bSomethingRuns)
     {
@@ -115,8 +141,11 @@ void CSaveMenu::ProcessStuckMissionFlag()
         return;
     }
 
-    if (now - ms_nStuckSince > 20000)
+    const bool bPhoneGrace = CConfigLoader::ms_bPhoneCallKeepsOnMission && s_bRoseHere && PhoneCallRunning();
+    if (now - ms_nStuckSince > (bPhoneGrace ? 120000u : 20000u))
     {
+        if (bPhoneGrace)
+            CMissionMirror::LogEvent("stuck-onmission-cleared-after-phone-grace");
         ms_nStuckSince = 0;
         ScriptVar(CTheScripts::OnAMissionFlag) = 0;
         CChat::AddMessage("{c7a6ff}[Coop]{d6dce8} Estabas marcado 'en mision' sin estar en una (el guardado venia asi): corregido. Guarda de nuevo con /guardar.");

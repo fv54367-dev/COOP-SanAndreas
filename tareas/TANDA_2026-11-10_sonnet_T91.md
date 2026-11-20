@@ -1,0 +1,25 @@
+# T91 — Home Invasion, ajustes (sonnet)
+
+Tarea: `tareas/T91_home_invasion_ajustes.md`. Archivos: `client/src/CHomeInvasion.{cpp,h}`, `CMissionSyncRules.cpp`, `shared/network/packets/home_invasion.h`, `shared/config.h`, docs. Protocolo 0.4.41 -> 0.4.42-alpha (se cambia el paquete HOME_INVASION: `holder` pasa a `holders[7]`; sin paquete nuevo). Interruptor: el mismo `coop-home-invasion` (apagado = comportamiento anterior). SIN REVISAR / SIN PROBAR / SIN INSTALAR.
+
+## 1. Entrar por cuenta propia
+- **Causa (log J2 `teleport-area from=0 to=8 source=packet`, t=66330468; J1 `rule-ally-follow-area change 0->8`, `rule-entry-open`, `rule-teleport players=1`, t=66330453-468):** no era la cámara espejada ni `CEntryExitTransitionSync` (el invitado no recibió ningún paquete de transición ni de cámara). `CMissionSyncRules` junta a los invitados con el host por dos caminos: un opcode de teletransporte de la misión (`bTeleportPending`, `OnCommandExecuted`) y la ventana de entrada de 30 s (`ProcessEntryWindow`). Los dos terminan en `TeleportToHost` (paquete TELEPORT_PLAYER_SCRIPTED) y cambian el área del invitado. La salida (`teleport-area 8->0`, t=66371421) los sacaba igual.
+- **Arreglo:** `CHomeInvasion::SuppressGather(script)` (GUNS1, switch activo, y host con área != 0 o etapa 51@ entre 3 y 6) corta ambos caminos. `ProcessAllyFollowArea` solo mueve NPC del grupo: no se toca. El resto de la misión (arranque con Ryder, etapa 7) sigue juntando como antes.
+- **Bordes:** 3-4 jugadores igual; las esperas "Esperando a X" de los LOCATE siguen (la misión espera a todos); sin switch todo igual.
+
+## 2. Cajas en paralelo
+- **Causa:** T71 tenía una sola reserva global (`session.crate/holder`): `Receive` rechazaba con `!session.crate && !Taking(dueño)`, `LockCrates` apagaba `bIsLiftable` de todas las demás y exigía `60@==0`.
+- **Arreglo:** un portador por caja (`session.holders[i]`, `applied[i]` por índice 0..6 del script). El dueño confirma por caja: primero en llegar gana (`holders[i]` vacío, caja liftable, el portador no tiene otra, el dueño no la está tomando, misma área y < 2.5 m). Sin `LockCrates` ni exigencia de `60@==0`. Solo la caja tomada pierde `bIsLiftable` y se restaura al soltar. Liberación por caja (muerte/F1/desconexión/timeout/borrado) deja la caja donde estaba el portador.
+- **Script:** el SCM sigue serializando entregas (36@/60@ únicos). `FilterCompare` contesta 0737/0475 (IS_CHAR_HOLDING / LOCATE objeto) para la caja que pregunta el script si su portador es un invitado que la sostiene; el script elige una por vez y las demás esperan su turno (loop 34@ en GUNS1 líneas ~4425-4500 de la fuente `project_gta_sa_coop`).
+
+## 3. Barra de ruido
+- **Causa:** el script limpia el contador y salta el bloque de ruido al salir el dueño (`Hud.ClearCounter($ryd1_noise_bar)`, `94@=0`, GUNS1 ~líneas 2700-2706 y 16589-16623; el bloque 37@==8 que suma/compara solo corre adentro). Como el HUD espejo copia los contadores del dueño, desaparece para todos (T69 lo dejó como límite aceptado; el dueño lo rechazó).
+- **Arreglo:** `OutsideNoise` (dueño afuera, etapa 6, 94@=0, algún invitado en la casa con paquete vigente) muestra el contador nativo `$26820` (tipo línea, texto `GUNS1_5`, slot libre propio) en el HUD del dueño, que ya se espeja: una sola barra para todos. Suma los aportes de los invitados con la misma regla del script (`*0.99` por frame) y a 100 pide `CCoopMission::RequestMissionFail()` (la misión falla para todos, sin la cinemática de despertar). `session.house` ya no depende de 94@. Al volver el dueño, `OnCommandStart` (opcode 03C4) borra nuestro slot antes de que el script re-agregue la suya; adentro vale la ruta T74 sin cambios.
+- **Bordes:** el script reinicia `$26820`/167@ a 0 al re-entrar el dueño (la barra baja ahí). Sin invitados adentro se limpia la barra. Reintento/fin: `EndOwner` la borra y reinicia el estado.
+
+## 4. Entrega sin esperar
+- **Causa:** la entrega del DUEÑO (LOCATE_CHAR_ON_FOOT_3D en BD1DE, radio 1.5 < 20) caía en la regla de espera de `CMissionSyncRules::FilterCompare` ("Esperando a que X salga") mientras algún invitado seguía adentro. La entrega de un invitado ya estaba resuelta por T71.
+- **Arreglo:** con la firma exacta de BD1DE y portador = dueño, `CHomeInvasion::FilterCompare` devuelve `handled` con el resultado nativo, antes de las reglas de espera. El botón (BD264) del dueño es nativo. Entrega de invitado como antes, por portador de la caja que indica 36@.
+
+## Verificación
+Compilan client, server y testbot (release x86). `git diff --check` limpio, CRLF. No se corrió el testbot ni `tools/test_t71.py`/`test_t74.py` (compilan el receptor viejo con `holder`; quedan desactualizados hasta adaptarlos). Sin juego: nada probado. Citas: gta-reversed `OnscreenTimer.cpp` (AddCounter 0x44CDA0, ClearCounter), `OnscreenCounterEntry.cpp` (Clear), `Ped.cpp` DropEntityThatThisPedIsHolding (5E0360); GUNS1 original de `project_gta_sa_coop` (ruido, bucle de cajas, entrega); Karimov-Akbar/sa-coop Objects.cpp (MIT, ya en NOTICE) sigue siendo la base de Held/TakeUp.

@@ -23,12 +23,14 @@
 #include "UI/CHudHideAll.h"
 
 #include "network/packets/players.h"
+#include "network/packets/vehicles.h"
 #include "network/packet.h"
 #include <CCarEnterExit.h>
 #include <CDiscordRPCMgr.h>
 #include <CEntryExitManager.h>
 #include <CEntryExitMarkerSync.h>
 #include <Hooks/MissionAudioHooks.h>
+#include <Hooks/TaskHooks.h>
 #include <CEntryExitTransitionSync.h>
 #include <CFireManager.h>
 #include <CGeneral.h>
@@ -61,6 +63,7 @@
 #include <CNetworkEntityBlip.h>
 #include <CCutsceneSkipVote.h>
 #include <CObjectSync.h>
+#include <CInteriorObjectSync.h>
 #include <CMinigameVs.h>
 #include <CCoopMission.h>
 #include <CStoryHelp.h>
@@ -289,6 +292,20 @@ public:
                 bool isPassenger = localPlayer->m_nPedFlags.bInVehicle && localPlayer->m_pVehicle &&
                                    localPlayer->m_pVehicle->m_pDriver != localPlayer;
 
+                // Scripted exits (WARP_CHAR_FROM_CAR_TO_COORD 0362, TASK_LEAVE_ANY_CAR 05CD, the scene eject) never
+                // build CTaskComplexLeaveCar, so its hook sent no VehicleExit: the server kept the gone driver as the
+                // syncer of a mission car and Sweet's Greenwood stayed still for good (Tagging Up Turf, 2026-11-18).
+                static bool s_bWasInCar = false;
+                const bool bInCarNow = localPlayer->m_nPedFlags.bInVehicle && localPlayer->m_pVehicle;
+                if (s_bWasInCar && !bInCarNow && CNetwork::m_bAuthenticated && !TaskHooks::LeaveTaskExitRecent())
+                {
+                    Packets::Vehicles::VehicleExit exitPacket{};
+                    exitPacket.bForce = true;
+                    GetPacketFactory().Send(exitPacket);
+                    CMissionMirror::LogEventf("exit-packet-scripted");
+                }
+                s_bWasInCar = bInCarNow;
+
                 velocity = isDriver ? localPlayer->m_pVehicle->m_vecMoveSpeed : localPlayer->m_vecMoveSpeed;
 
                 if (velocity.x == 0 && velocity.y == 0 && velocity.z == 0)
@@ -395,6 +412,7 @@ public:
                 if (tickCount > lastPickupSyncTickRate + 100)
                 {
                     CObjectSync::Process();
+                    CInteriorObjectSync::Process();
                     CPickupSync::Process();
                     lastPickupSyncTickRate = tickCount;
                 }
@@ -485,6 +503,7 @@ public:
                 CVsRace::DrawBoard();
                 CVsLobby::DrawHelpBox();
                 CCoopLowrider::DrawDanceTeam();
+                CCoopPool::Draw();
             }
             if (CEntryExitMarkerSync::ms_bUpdateAfterProcessingThisFrame && CLocalPlayer::m_bIsHost &&
                 CEntryExitMarkerSync::ms_nLastUpdate + 5000 < GetTickCount())

@@ -14,6 +14,7 @@
 #include "UI/CChat.h"
 #include "network/packets/mission_wait_notice.h"
 #include "CCutsceneMgr.h"
+#include <game_sa/CTagManager.h>
 #include "Commands/Commands/CCommandTeleportPlayersToHostSafely.h"
 #include <algorithm>
 #include <string>
@@ -287,7 +288,150 @@ bool HoldInteriorEntry(CRunningScript* script)
 }
 }
 
+// mission-hold-keep-tags: a held script does not run, but its player walks free (the hold of the Ballas scene in
+// SWEET1 lasted 58 s while the host sprayed the roof tag). The script then un-sprays that area with
+// SET_TAG_STATUS_IN_AREA (0x0703, FALSE) right before it asks for the tag, and the player had to spray it again.
+// The tags sprayed during a hold are remembered and put back right after such a reset.
+namespace
+{
+constexpr int NUM_TAG_SLOTS = 150;
+constexpr uint8_t ALPHA_TAGGED = 228;
+constexpr uint16_t OP_SET_TAG_STATUS_IN_AREA = 0x0703;
+constexpr uint16_t OP_SCRIPT_NAME = 0x03A4;
+const CRunningScript* s_trackScript = nullptr;
+uint8_t s_tagSnapshot[NUM_TAG_SLOTS];
+uint8_t s_tagKeep[NUM_TAG_SLOTS];     // alpha to put back, 0 = nothing to keep
+uint8_t s_tagRestore[NUM_TAG_SLOTS];  // alpha to put back before the next command
+bool s_restorePending = false;
+unsigned int s_releasedAt = 0;      // a fail/cleanup long after the hold must not repaint
+constexpr unsigned int KEEP_AFTER_RELEASE_MS = 30000;
+
+void ClearKeptTags()
+{
+    s_trackScript = nullptr;
+    s_restorePending = false;
+    memset(s_tagKeep, 0, sizeof(s_tagKeep));
+    memset(s_tagRestore, 0, sizeof(s_tagRestore));
+}
+
+void TrackHeldScript(const CRunningScript* script)
+{
+    const int numTags = std::clamp(CTagManager::ms_numTags, 0, NUM_TAG_SLOTS);
+    if (s_trackScript != script)
+    {
+        s_trackScript = script;
+        for (int i = 0; i < numTags; i++)
+            s_tagSnapshot[i] = CTagManager::ms_tagDesc[i].m_nAlpha;
+        return;
+    }
+    for (int i = 0; i < numTags; i++)
+    {
+        const uint8_t alpha = CTagManager::ms_tagDesc[i].m_nAlpha;
+        if (alpha > ALPHA_TAGGED && s_tagSnapshot[i] <= ALPHA_TAGGED && s_tagKeep[i] == 0)
+        {
+            s_tagKeep[i] = alpha;
+            CMissionMirror::LogEventf("hold-tag-sprayed tag=%d alpha=%d", i, (int)alpha);
+        }
+    }
+}
+}
+
 bool CMissionSceneWait::ShouldHold(CRunningScript* script, unsigned short opcode)
+{
+    const bool hold = ShouldHoldCore(script, opcode);
+    if (CConfigLoader::ms_bMissionHoldKeepTags && script && script->m_bIsMission)
+    {
+        if (hold)
+            TrackHeldScript(script);
+        else if (s_trackScript == script)
+        {
+            s_trackScript = nullptr;  // released: what was sprayed meanwhile stays remembered in s_tagKeep
+            s_releasedAt = CTimer::m_snTimeInMilliseconds;
+        }
+    }
+    return hold;
+}
+
+void CMissionSceneWait::OnCommandStart(CRunningScript* script, unsigned short opcode)
+{
+    if (!CConfigLoader::ms_bMissionHoldKeepTags || !script)
+        return;
+    // SCRIPT_NAME runs on each new mission, even when GTA reuses the same script slot
+    if (opcode == OP_SCRIPT_NAME && script->m_bIsMission)
+    {
+        ClearKeptTags();
+        return;
+    }
+    if (s_restorePending)
+    {
+        s_restorePending = false;
+        for (int i = 0; i < NUM_TAG_SLOTS; i++)
+        {
+            if (!s_tagRestore[i])
+                continue;
+            auto& tagDesc = CTagManager::ms_tagDesc[i];
+            if (tagDesc.m_pEntity && tagDesc.m_nAlpha <= ALPHA_TAGGED)
+            {
+                CTagManager::SetAlpha(tagDesc.m_pEntity, s_tagRestore[i]);
+                CMissionMirror::LogEventf("hold-tag-restored tag=%d alpha=%d", i, (int)s_tagRestore[i]);
+            }
+            s_tagRestore[i] = 0;
+        }
+    }
+    if (opcode != OP_SET_TAG_STATUS_IN_AREA || !script->m_bIsMission)
+        return;
+    bool any = false;
+    for (int i = 0; i < NUM_TAG_SLOTS && !any; i++)
+        any = s_tagKeep[i] != 0;
+    if (!any)
+        return;
+    if (s_trackScript == nullptr && CTimer::m_snTimeInMilliseconds - s_releasedAt > KEEP_AFTER_RELEASE_MS)
+    {
+        ClearKeptTags();
+        return;
+    }
+    // read the parameters (x1 y1 x2 y2 bool) without consuming them: the command reads them again. The capture hook
+    // on CollectParameters must not see this read (the synced 0x0703 would carry the parameters twice)
+    float f[4];
+    int tagged;
+    {
+        int params[5];
+        OpcodeParameter buffer[NUM_SYNCED_PARAMS];
+        const bool network = COpCodeSync::bProcessingNetworkOpcode;
+        memcpy(params, ScriptParams, sizeof(params));
+        memcpy(buffer, COpCodeSync::scriptParamsBuffer, sizeof(buffer));
+        COpCodeSync::BeginLocalCommands();
+        COpCodeSync::bProcessingNetworkOpcode = true;
+        const uint8_t* ip = script->m_pCurrentIP;
+        script->m_pCurrentIP += 2;
+        script->CollectParameters(5);
+        script->m_pCurrentIP = const_cast<uint8_t*>(ip);
+        memcpy(f, &ScriptParams[0], sizeof(f));
+        tagged = ScriptParams[4];
+        memcpy(ScriptParams, params, sizeof(params));
+        memcpy(COpCodeSync::scriptParamsBuffer, buffer, sizeof(buffer));
+        COpCodeSync::bProcessingNetworkOpcode = network;
+        COpCodeSync::EndLocalCommands();
+    }
+    if (tagged != 0)
+        return;
+    const float minX = (std::min)(f[0], f[2]), maxX = (std::max)(f[0], f[2]);
+    const float minY = (std::min)(f[1], f[3]), maxY = (std::max)(f[1], f[3]);
+    for (int i = 0; i < NUM_TAG_SLOTS; i++)
+    {
+        auto& tagDesc = CTagManager::ms_tagDesc[i];
+        if (!s_tagKeep[i] || !tagDesc.m_pEntity)
+            continue;
+        const CVector pos = tagDesc.m_pEntity->GetPosition();
+        if (pos.x < minX || pos.x > maxX || pos.y < minY || pos.y > maxY)
+            continue;
+        s_tagRestore[i] = s_tagKeep[i];
+        s_tagKeep[i] = 0;
+        s_restorePending = true;
+    }
+}
+
+bool CMissionSceneWait::ShouldHoldCore(CRunningScript* script, unsigned short opcode)
 {
     if (CConfigLoader::ms_bMissionHoldOnEntry && script && script->m_bIsMission && EligibleScript(script) &&
         HoldInteriorEntry(script))
@@ -316,6 +460,15 @@ bool CMissionSceneWait::ShouldHold(CRunningScript* script, unsigned short opcode
     {
         if (TheCamera.m_bWideScreenOn)
             s_passUntil = now + PASS_WINDOW_MS;
+        return false;
+    }
+    // SWEET1 (Tagging Up Turf, 2026-11-18): the tag dialogs' bars held the script for 80 s+ while the players spray
+    // apart; the host's mission must simply go on, the scene reaches the others mirrored wherever they are
+    if (opcode == OP_SWITCH_WIDESCREEN && script && !_strnicmp(script->m_szName, "SWEET1", 8))
+    {
+        CMissionMirror::LogEventf("rule-wait-scene-skip opcode=%04X reason=sweet1-free", opcode);
+        Reset();
+        s_passUntil = now + PASS_WINDOW_MS;
         return false;
     }
     // SET_PLAYER_CONTROL off came first (CPad bPlayerSafe, replicated to the guests too): nobody can walk to the scene and

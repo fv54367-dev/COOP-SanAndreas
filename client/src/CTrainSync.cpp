@@ -675,16 +675,28 @@ void FreeAll()
     SweepOrphanCopies(true);
 }
 
-// host: while DoTrainGenerationAndRemoval runs it only knows the host's own camera: a random train a network
-// player is near would be deleted under him (T-D3). The mission flag makes it invisible to that removal
+// host: DoTrainGenerationAndRemoval only knows this game's own camera. In one call it deletes every chain farther
+// than 220 m from it (0x6F7AC3) and, earlier, remembers ANY front carriage without the mission flag as "a train is
+// out there" (0x6F7A43) to skip generation entirely (0x6F7D6D). So the mission flag may only cover a chain the
+// generator would delete on its own while a network player still needs it: masking a chain that sits near the host's
+// own camera removes it from that count and the generator spawns another one every few seconds (log 19-11: nine
+// trains, four per direction, frozen over the LS line). The cap bounds the worst case: once an unmasked train
+// exists the generator stops spawning by itself.
 CTrain* ms_aKeptHeads[8];
 int ms_nKeptCount = 0;
+constexpr int MAX_KEPT_TRAINS = 2;  // one player rides one train
+constexpr float KEEP_RESERVE_DISTANCE = GENERATOR_KEEP_RADIUS + 60.0f;  // the camera never sits this far off the ped
 
 void KeepTrainsNearNetworkPlayers()
 {
     ms_nKeptCount = 0;
-    if (CNetworkPlayerManager::m_pPlayers.empty())
+    if (!CConfigLoader::ms_bTrainSyncKeep || CNetworkPlayerManager::m_pPlayers.empty())
         return;
+
+    CPed* pLocalPed = FindPlayerPed(0);
+    if (pLocalPed == nullptr || pLocalPed->m_matrix == nullptr)
+        return;
+    const CVector localPos = pLocalPed->GetPosition();
 
     for (auto vehicle : CPools::ms_pVehiclePool)
     {
@@ -695,9 +707,17 @@ void KeepTrainsNearNetworkPlayers()
         if (pHead->m_pPrevCarriage != nullptr || pHead->m_nTrainFlags.bMissionTrain)
             continue;
 
-        // any carriage within the generator's removal radius of a network player?
-        bool bKeep = false;
-        for (CTrain* pCarriage = pHead; pCarriage != nullptr && !bKeep; pCarriage = pCarriage->m_pNextCarriage)
+        // the generator would keep this chain by itself: leave it visible to its own bookkeeping
+        bool bOutOfHostView = true;
+        for (CTrain* pCarriage = pHead; pCarriage != nullptr && bOutOfHostView; pCarriage = pCarriage->m_pNextCarriage)
+            if (DistanceBetweenPoints(pCarriage->GetPosition(), localPos) < KEEP_RESERVE_DISTANCE)
+                bOutOfHostView = false;
+        if (!bOutOfHostView)
+            continue;
+
+        // ...and only rescue it while a network player still has it on screen
+        bool bNeeded = false;
+        for (CTrain* pCarriage = pHead; pCarriage != nullptr && !bNeeded; pCarriage = pCarriage->m_pNextCarriage)
         {
             CVector pos = pCarriage->GetPosition();
             for (CNetworkPlayer* pNetworkPlayer : CNetworkPlayerManager::m_pPlayers)
@@ -706,17 +726,34 @@ void KeepTrainsNearNetworkPlayers()
                     continue;
                 if (DistanceBetweenPoints(pos, pNetworkPlayer->m_pPed->GetPosition()) < GENERATOR_KEEP_RADIUS)
                 {
-                    bKeep = true;
+                    bNeeded = true;
                     break;
                 }
             }
         }
-        if (!bKeep || ms_nKeptCount >= 8)
+        if (!bNeeded || ms_nKeptCount >= MAX_KEPT_TRAINS)
             continue;
 
         for (CTrain* pCarriage = pHead; pCarriage != nullptr; pCarriage = pCarriage->m_pNextCarriage)
             pCarriage->m_nTrainFlags.bMissionTrain = true;
         ms_aKeptHeads[ms_nKeptCount++] = pHead;
+    }
+
+    // Evidence for the next in-game test: one line when the generator starts or stops being blind to a chain.
+    static CTrain* s_aLastKept[MAX_TRAINS] = {};
+    static int s_nLastKept = 0;
+    static uint32_t s_nLastKeepLog = 0;
+    bool bChanged = s_nLastKept != ms_nKeptCount;
+    for (int i = 0; !bChanged && i < ms_nKeptCount; i++)
+        bChanged = s_aLastKept[i] != ms_aKeptHeads[i];
+    uint32_t now = GetTickCount();
+    if (bChanged && now - s_nLastKeepLog >= 5000)
+    {
+        s_nLastKept = ms_nKeptCount;
+        for (int i = 0; i < ms_nKeptCount; i++)
+            s_aLastKept[i] = ms_aKeptHeads[i];
+        s_nLastKeepLog = now;
+        TrainLog("train-sync: keep masked=%d (chains hidden from the generator)", ms_nKeptCount);
     }
 }
 
@@ -748,9 +785,32 @@ bool IsAnyCarriageRegistered(CTrain* pHead)
     return false;
 }
 
+// host: evidence that the generator keeps the population at vanilla level. It only ever spawns while no unmasked
+// train exists (0x6F7D6D), so a head count that keeps growing means something is hiding chains from it again.
+void LogTrainPopulation(int heads)
+{
+    static int s_nLastHeads = -1;
+    static uint32_t s_nLastLog = 0;
+
+    uint32_t now = GetTickCount();
+    bool bAnomaly = heads >= 3;
+    if (heads == s_nLastHeads && (!bAnomaly || now - s_nLastLog < 10000))
+        return;
+
+    int registered = 0;
+    for (int id = 0; id < MAX_TRAINS; id++)
+        if (ms_used[id])
+            registered++;
+
+    s_nLastHeads = heads;
+    s_nLastLog = now;
+    TrainLog("train-sync: population heads=%d registered=%d", heads, registered);
+}
+
 // host: find new chains, forget gone ones, send the state of every registered train
 void HostProcess()
 {
+    int nHeads = 0;
     for (auto vehicle : CPools::ms_pVehiclePool)
     {
         if (!vehicle || vehicle->m_nVehicleSubType != VEHICLE_TRAIN)
@@ -760,9 +820,11 @@ void HostProcess()
         if (pHead->m_pPrevCarriage != nullptr)
             continue;
 
+        nHeads++;
         if (!IsAnyCarriageRegistered(pHead))
             RegisterTrain(pHead);
     }
+    LogTrainPopulation(nHeads);
 
     for (int id = 0; id < MAX_TRAINS; id++)
     {

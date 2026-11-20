@@ -11,6 +11,7 @@ public:
     static void BeforeCommand(CRunningScript* script, uint16_t opcode);
     static void AfterCommand(CRunningScript* script, uint16_t opcode);
     static void Process();
+    static void Draw();
     static void Reset();
     static void OnPacket(const Packets::Scripts::CoopPool& packet);
 };

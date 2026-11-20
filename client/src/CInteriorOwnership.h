@@ -1,5 +1,7 @@
 #pragma once
 #include <list>
+#include <vector>
+
 
 // The first player that enters an interior owns its population: every player inside sees the peds the owner creates
 // (shop clerks, barmen, ambient peds...). The rest are guests: their own interior peds stay local but hidden, and are
@@ -20,6 +22,10 @@ public:
     static void HandlePopulation(const Packets::Peds::InteriorPopulation& packet);
     static void ObserveLocalPed(CPed* ped);
     static bool IsServicePed(CPed* ped);
+    // interior-service-guest: our hidden local keepers (the guest's own scripts animate them)
+    static std::vector<CPed*> GetHiddenServicePeds();
+
+
     static void MaintainHiddenPeds();
     static bool AdoptServicePed(CNetworkPed* networkPed);
     // a remote record (the owner's) of the same model stands where this local ped is
@@ -32,6 +38,7 @@ public:
     static bool IsOwner() { return s_role == Role::Owner; }
     static bool IsGuest() { return s_role == Role::Guest; }
     static unsigned char GetLocalArea() { return s_nAreaCode; }
+    static playerid_t GetOwnerId() { return s_ownerId; }
 
     // a ped our game is adding to the world: as a guest, hide it instead of syncing it
     static bool ShouldHideLocalPed(CPed* ped);

@@ -7,6 +7,7 @@
 #include "CMissionMirror.h"
 #include "CCameraMirror.h"
 #include "Commands/Commands/CCommandTeleportPlayersToHostSafely.h"
+#include "Commands/Commands/CCommandPutNetworkPlayersInCar.h"
 #include <algorithm>
 #include <map>
 #include <set>
@@ -316,9 +317,28 @@ void PlaceLocalGuest(CPed* me, CPed* principal, uint32_t now) {
         }
         return keep("in-vehicle");  // seen in his own seat, as everywhere
     }
+    // SWEET1 (Tagging Up Turf, 2026-11-18): the tag dialogs play while the players spray apart; nobody is brought
+    // into the picture (the placement pulled a spraying guest 46 and 71 m onto the roofs). The scene reaches him
+    // mirrored wherever he is.
+    if (sceneMission == 13) return keep("sweet1-free");
+    // INTRO1 (Big Smoke's house, 2026-11-19): a guest on his way into the mission car is not placed, held or warped by the
+    // scene; that clears his task and he loses the seat the boarding gave him
+    if (CConfigLoader::ms_bIntroBoard && sceneMission == 11 &&
+        CCommandPutNetworkPlayersInCar::IsBoardingThisPlayer(id))
+    {
+        // the scene may have hidden him while he covered the camera: whoever is boarding has to be visible
+        SetSceneHidden(g, me, false, id, "boarding");
+        return keep("boarding");
+    }
     if (me->m_nAreaCode != principal->m_nAreaCode) return keep("other-area");
     if (!g.placed && DistanceBetweenPoints(me->GetPosition(), principal->GetPosition()) > 150.0f) return keep("far");
     if (now - sceneStart < 400) return;  // the scene's own move of CJ comes over the sync first
+    // The guest already walked in next to the principal (Ryder's pizzeria, 2026-11-18): he is in the picture where he
+    // stands, and a rank-spot warp only dragged him around the small room. Only a guest farther out is brought in.
+    if (!g.placed) {
+        const CVector off = me->GetPosition() - principal->GetPosition();
+        if (off.x * off.x + off.y * off.y < 10.0f * 10.0f) return keep("near");
+    }
     // The principal drives through a short scene (Robbing Uncle Sam: each crate the forklift drops in the truck, 13.11):
     // a guest already nearby is in the picture and keeps doing his part; moving him there was a teleport every crate.
     if (!g.placed && principal->m_nPedFlags.bInVehicle &&
@@ -333,7 +353,9 @@ void PlaceLocalGuest(CPed* me, CPed* principal, uint32_t now) {
     CVector anchor = principal->m_nPedFlags.bInVehicle && principal->m_pVehicle ? principal->m_pVehicle->GetPosition() : principal->GetPosition();
     bool covers = CoversCamera(Chest(me), Chest(principal));
     CVector d = anchor - g.anchor;
-    bool need = !g.placed || d.x * d.x + d.y * d.y > 3.5f * 3.5f || covers;
+    // Only the anchor's move re-places him; covering the camera hides him below instead. Moving him out of the shot
+    // re-teleported him every 500 ms in small interiors, where every spot covers (Ryder's pizzeria, 2026-11-18).
+    bool need = !g.placed || d.x * d.x + d.y * d.y > 3.5f * 3.5f;
     if (need && now - g.lastTry >= 500) {
         g.lastTry = now;
         CVector spot; float heading = 0.0f; const char* why = "";
@@ -346,7 +368,7 @@ void PlaceLocalGuest(CPed* me, CPed* principal, uint32_t now) {
             }
             CVector delta = spot - me->GetPosition();
             float dist = std::sqrt(delta.x * delta.x + delta.y * delta.y);
-            bool walk = g.placed && dist < 12.0f && !covers;
+            bool walk = g.placed && dist < 12.0f;
             // CJ running in the scene (SMOKE3: CJ and Smoke run, 12.11): he runs too, not walks behind them
             const bool run = principal->m_nMoveState >= PEDMOVE_RUN || dist > 6.0f;
             if (walk) Command<Commands::TASK_GO_STRAIGHT_TO_COORD>(g.handle, spot.x, spot.y, spot.z, run ? 6 : 4, 10000);  // PEDMOVE_RUN / PEDMOVE_WALK

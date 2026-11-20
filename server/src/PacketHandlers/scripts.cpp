@@ -331,9 +331,9 @@ bool PoolBusy(playerid_t id, uint32_t exceptOwner) {
         if (owner != exceptOwner && (owner == id.value() || s.partner == id)) return true;
     return false;
 }
-void PoolRelay(Packets::Scripts::CoopPool& p, CNetworkPlayer* owner) {
+void PoolRelay(Packets::Scripts::CoopPool& p, CNetworkPlayer* owner, CNetworkPlayer* activePartner = nullptr) {
     for (auto target : CNetworkPlayerManager::m_pPlayers)
-        if (PoolNear(owner, target)) GetPacketFactory().Send(p, target);
+        if (target == activePartner || PoolNear(owner, target)) GetPacketFactory().Send(p, target);
 }
 }
 PACKET_HANDLER(ePacketType::COOP_POOL, Packets::Scripts::CoopPool* p, CNetworkPlayer* sender)
@@ -378,12 +378,14 @@ PACKET_HANDLER(ePacketType::COOP_POOL, Packets::Scripts::CoopPool* p, CNetworkPl
         s.active = true; s.tick = g_serverTime; PoolRelay(*p, owner); return;
     }
     if (!s.active || p->partner != s.partner) return;
+    auto partner = CNetworkPlayerManager::GetPlayer(s.partner);
+    if (!partner || partner->m_bIndividualMode || !partner->m_bVanillaScripts) return;
+    // The reserved pair is already admitted. POOL2 moves both actors during the camera setup.
     if (p->action == P::INPUT) {
-        if (sender->m_playerId != s.partner || !PoolNear(owner, sender) ||
-            !std::isfinite(p->mouseX) || !std::isfinite(p->mouseY)) return;
+        if (sender != partner || !std::isfinite(p->mouseX) || !std::isfinite(p->mouseY)) return;
         GetPacketFactory().Send(*p, owner);
     } else if ((p->action == P::VIEW || p->action == P::RESULT) && sender == owner) {
-        s.tick = g_serverTime; PoolRelay(*p, owner);
+        s.tick = g_serverTime; PoolRelay(*p, owner, partner);
     }
 }
 

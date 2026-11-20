@@ -1,0 +1,56 @@
+No modifiqué archivos. **Confirmado** = visible en código; **sospecha** = falta comprobarlo durante el fallo.
+Rutas abreviadas: `C/` = `client/src/`; `S/` = `scm/scripts/`; `R/` = `_refs/gta-reversed/source/game_sa/`.
+
+Para las seis propuestas: interruptores **nuevos, propuestos**, apagado = conducta actual; autoridad y participantes validados también en servidor; F1 individual, jugadores tardíos y otros modos de scripts excluidos. Reutilizar `CCoopMission::ShouldIncludeNetworkPlayer` (`C/CCoopMission.cpp:167`) y `CanReceiveMissionPacket` (`server/src/CCoopMission.cpp:109`). Nada debe depender solamente de “estar cerca”.
+
+**1. Partida nueva y aeropuerto**
+- **Hoy, confirmado:** aeropuerto = **INTRO, misión 2**; no INTRO1. `S/MAIN.txt:387` la lanza automáticamente; `S/INTRO.txt:164` carga `PROLOG1` y `:190` arranca la cinemática. **INTRO1, misión 11**, comienza después desde el marcador de Big Smoke (`S/INT.txt:28`, `:34`).
+- INTRO queda fuera del espejo por exclusión explícita de misiones 0–10 (`C/CMirrorPolicy.h:17`, `:208`), y tampoco está en la tabla sincronizada (`C/CMissionSyncRules.cpp:19`). Cada juego pretende ejecutar su propia introducción.
+- Hay tres avisos distintos: al conectarse tarde, **“Hay una mision en curso: vas a entrar en la proxima”** (`server/src/CNetwork.cpp:350`, `:509`); al intentar la misma historia, cartel de cinco segundos con el dueño (`C/CMissionLock.cpp:40`, `:81`); al ofrecer otra coop, **“Ya hay una misión cooperativa en curso…”** (`C/CCoopMission.cpp:189`). Sin el mensaje exacto no corresponde atribuirlo a uno solo.
+- `IsStoryLauncher` incluye INT, pero no MAIN; `FilterMissionStart` filtra `CAN_PLAYER_START_MISSION`, no este lanzamiento automático (`C/CMissionSyncRules.cpp:83`, `:103`). F1 individual/todos individuales se reconoce en `C/CMissionMode.cpp:91`.
+- **Propuesta:** `mission-shared-prologue`: coordinación especial del arranque, con grupo de jugadores listos antes de INTRO y barrera de carga/inicio de escenas. Conservar la inicialización local de cada partida; exceptuar el bloqueo de misión 2 únicamente para ese grupo. **No alcanza con agregar INTRO a la lista ni con desactivar todos los bloqueos.**
+- **Bordes:** esperar a los 2–4 participantes; desconectados salen de la barrera; entrada posterior espera/repite en otro inicio, sin incorporarse a mitad. Individual conserva su INTRO; asientos no aplican.
+- **Dificultad difícil; riesgo alto:** arranque, progreso local, carga y varias partes del prólogo. El receptor actual espera carga local, pero no establece una barrera colectiva (`C/COpCodeSync.cpp:1441`).
+
+**2. Auto Ballas de Big Smoke**
+- **Confirmado:** INTRO1 crea una vez el Voodoo modelo 412, `51@`, con conductor `50@` y pasajero `52@` (`S/INTRO1.txt:431`). El guion **sí lo reposiciona repetidamente**: lejos de CJ —fuera del rectángulo de 50 m— y fuera de pantalla, busca un nodo detrás de CJ y mueve el mismo auto (`:2122–2132`). Mirar hacia adelante favorece esa condición.
+- **C++:** se publica conservando `createdBy` (`C/CNetworkVehicle.cpp:272`); los vehículos de misión quedan excluidos del streaming por distancia (`C/CStreamingSync.cpp:228`, `:237`) y del traspaso ambiental ordinario (`server/src/CHandover.cpp:271`). Por eso streaming/handover **no son la primera explicación** si sigue clasificado como misión.
+- El invitado también puede ver un salto instantáneo: errores de posición mayores de 5 m se corrigen de golpe (`C/CNetworkVehicle.cpp:320`). **Seguro:** existe el “respawn visual” previsto por el guion. **No probado:** que durante el reporte cambie realmente el ID o se destruya la copia.
+- Hay un camino sospechoso: el hook de `CWorld::Remove` elimina el registro de misión (`C/Hooks/WorldHooks.cpp:163`); su destructor manda REMOVE (`C/CNetworkVehicle.cpp:112`), y Add puede crear otro (`C/Hooks/WorldHooks.cpp:106`). Pero son hooks por sitios concretos (`:311`, `:328`): **no confirmé que este movimiento atraviese esos sitios**.
+- **Propuesta:** `mission-vehicle-relocation`: registrar primero handle/ID/modelo/posición y ADD/REMOVE; conservar identidad en movimientos temporales confirmados. Para evitar apariciones visibles, permitir el reposicionamiento de INTRO1 solo cuando ningún participante vea la posición vieja/nueva, con validación acotada al guion.
+- Usar el movimiento nativo y mantener sectores correctamente: `R/Entity/Vehicle/Automobile.cpp:6434` usa Remove/Add; `R/Entity/Physical.cpp:142` registra sectores. No sustituirlo indiscriminadamente por escribir la matriz.
+- **Bordes:** considerar las cámaras de los 3–4; excluir individual y desconectados; mantener el dueño mientras corre la misión; asientos no aplican. **Dificultad media/alta; riesgo medio/alto**, especialmente al alterar la persecución original.
+
+**3. Drive-Thru: puerta y autos**
+- **Identificación confirmada:** `SWEET3`; carga la escena inicial `SWEET2A` (`S/SWEET3.txt:239`).
+- **Puerta:** no encontré allí una orden explícita de crear/ocultar una puerta. El motor oculta entidades por modelo y posición al comenzar escenas (`R/CutsceneMgr.cpp:273`, `:1009`). Ya existe una corrección relacionada con widescreen y modelos visibles de Drive-Thru (`C/CCameraMirror.cpp:197`).
+- `CObjectSync` copia todos los `OBJECT_MISSION` (`C/CObjectSync.cpp:95`), crea un objeto nuevo sin resolver un equivalente del mundo (`:201`) y aplica visibilidad recibida (`:259`). **Duplicación o reaparición del decorado: sospecha**, todavía sin identificar el modelo.
+- Además, los objetos nativos de cinemática tienen tipo CUTSCENE (`R/Entity/Object/CutsceneObject.cpp:27`): **no está demostrado que se duplique directamente la puerta animada mediante ese filtro**.
+- **Propuesta puerta:** `mission-cutscene-world-visibility`: identificar primero ambas entidades; respetar ocultamientos nativos durante la escena, restaurarlos al limpiar y excluir del espejo solo duplicados comprobados. No borrar objetos cercanos por semejanza.
+- **Autos, confirmado:** Greenwood tiene Smoke, Sweet y Ryder en sus tres plazas (`S/SWEET3.txt:307`, `:321`, `:335`). El SCM coop agrega un Glendale para invitados (`:358–374`); **eso no existe en vanilla**. La regla C++ solo acepta bicis/motos de misión con blip (`C/CMissionSyncRules.cpp:423`, `:452`).
+- **Propuesta autos:** `mission-full-car-copies`: ampliar el objetivo de vehículo a autos cuyas plazas están reservadas/ocupadas por el reparto; usar `ParkCopiesNextTo` (`C/Commands/Commands/CCommandPutNetworkPlayersInCar.cpp:175`). Estacionar copias, con blip, sin subir automáticamente a nadie.
+- **Bordes:** copias suficientes y separadas para tres invitados; considerar NPC todavía entrando; cancelar pendientes al desconectar/finalizar; individual intacto. Puerta: limpieza también al fallar o perder autoridad. **Puerta media/difícil, riesgo medio; autos media, riesgo medio.**
+
+**4. Bajar invitados cuando manda el guion**
+- **Confirmado:** Sweet usa `Task.LeaveCar` sobre CJ (`S/SWEET1.txt:743`); Ryder también (`S/INTRO2.txt:2471`); Drive-Thru baja inmediatamente a los NPC (`S/SWEET3.txt:728`, `:735`, `:742`) y mueve a CJ con `WarpFromCarToCoord` (`:931`).
+- Hoy se replican LEAVE_CAR/LEAVE_ANY_CAR, LEAVE_IMMEDIATELY y WARP (`C/COpCodeSync.cpp:185`, `:188`, `:298`, `:206`). Pero el parámetro jugador sigue apuntando al **ped remoto del host**, no a cada invitado (`:823`, `:1246`).
+- `rule-teleport` detecta movimientos de CJ y reúne invitados (`C/CMissionSyncRules.cpp:397`, `:500`). En vanilla no se excluyen estas primeras misiones (`C/CMirrorBlips.cpp:1001`). **No cubre una simple tarea de salir**, y el receptor usa `Teleport`, sin la limpieza explícita del WARP (`C/PacketHandlers/scripts.cpp:243`).
+- **Propuesta:** `mission-scripted-exit`: evento específico cuando el guion ordena salir a CJ; cada participante ejecuta la tarea nativa sobre **su propio vehículo**. Para WARP, usar su semántica completa: limpiar tareas, sacar del auto y ubicar con separación/interior correcto (`R/Scripts/Commands/CharacterCommands.cpp:1988`).
+- **Bordes:** tres invitados en vehículos distintos, ya a pie, tareas demoradas, desconexión y escena cancelada; no expulsar jugadores porque sale cualquier NPC. Asientos libres no importan al salir.
+- **Dificultad media; riesgo medio:** distinguir salida animada de inmediata, sin convertir cada movimiento de CJ en una expulsión.
+
+**5. Nines and AKs**
+- **Confirmado: es SWEET2. La subida del regreso es por guion**, con cámara fija: Smoke pasajero y CJ conductor (`S/SWEET2.txt:2637`, `:2646–2648`). También hay WARP de respaldo para ambos (`:2792`, `:2798`).
+- El SCM coop después llama `Coop.PutNetworkPlayersInCar` (`:2810`); vanilla carece de esa llamada. Las tareas ordinarias se replican al ped correspondiente, no a todos los jugadores (`C/COpCodeSync.cpp:151`, `:153`, `:1246`).
+- **Propuesta:** `mission-scripted-boarding`: disparar exclusivamente por TASK_ENTER/WARP sobre CJ emitido por una misión sincronizada, agrupando tarea y WARP de respaldo como una sola orden. Nunca disparar por detectar que el host entró manualmente.
+- Reutilizar reserva de plazas y envío dirigido (`C/Commands/Commands/CCommandPutNetworkPlayersInCar.cpp:92`). Reservar primero el asiento de Smoke aunque todavía camine hacia él.
+- **Bordes:** Smoke deja dos plazas para invitados; con tres invitados uno necesita copia propia. El receptor ya tiene fallback de copia (`C/PacketHandlers/scripts.cpp:296`), pero debe esperar brevemente al vehículo remoto antes de confundir “todavía no llegó” con “lleno”. Deduplicar, cancelar al desconectar y definir qué hacer si el invitado ya conduce otro auto (`:279` hoy lo deja allí).
+- **Dificultad media; riesgo medio.** Conserva la decisión de no arrastrar por subidas manuales, explicitada también en `C/CMissionSyncRules.cpp:426`.
+
+**6. Spray, armas y munición**
+- **Corrección confirmada:** Tagging Up Turf = **SWEET1**: spray a CJ (`S/SWEET1.txt:185`); el SCM coop lo entrega explícitamente a invitados (`:192`). SWEET2 entrega pistola (`S/SWEET2.txt:1341`).
+- **Sí: hoy GIVE_WEAPON_TO_CHAR sobre CJ llega al ped de red del host.** Está declarado como PED (`C/COpCodeSync.cpp:139`), se serializa con ID del host (`:823`) y se resuelve a su copia remota (`:1246–1255`). No significa “dar a mi jugador”.
+- **Propuesta:** `mission-player-equipment`: conservar esa réplica visual y agregar entrega dirigida al jugador local de cada participante **solo cuando el destinatario original sea CJ y el origen una misión sincronizada autorizada**. No multiplicar armas entregadas a NPC.
+- Tratar GIVE/añadir munición/fijar munición/equipar como operaciones distintas; ADD_AMMO y SET_CHAR_AMMO no figuran en la tabla actual de `COpCodeSync.cpp`. No deducir entregas comparando inventarios.
+- **Bordes:** entrega una vez por evento para 2–4; sin reentrega por reconexión ni a tardíos; individual intacto; asientos no aplican. Respetar inventario propio al limpiar: `CPed::GiveWeapon` puede sustituir otra arma del mismo slot y acumular munición (`R/Entity/Ped/Ped.cpp:2532`, `:2572`).
+- **Dificultad media; riesgo medio:** el spray puntual es sencillo; la regla general necesita deduplicación y política explícita para armas previas, munición y retiro al terminar.

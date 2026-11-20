@@ -723,4 +723,88 @@ private:
     }
 };
 
+
+// interior-object-sync (TANDA 2026-11-18): an object held by an interior ped (the diners' pizza, the keeper's
+// tray). The interior owner publishes it; the server stamps the sender and routes it to the sender's room only
+// (every pizza branch shares area 5). Guests keep a visual copy tracked to their ped copy's hand bone each frame.
+// objectid is (senderPlayerId << 24) | counter: unique per owner, no collisions across a handover.
+class InteriorHeldObject : public Packet
+{
+    DEFINE_PACKET_TYPE(InteriorHeldObject, ePacketType::INTERIOR_HELD_OBJECT, ePacketChannel::EVENT);
+public:
+    SenderPlayerId senderPlayerid{};  // the server stamps it; guests drop packets from a non-current owner
+    uint32_t objectid = 0;
+    pedid_t pedid{};                  // the ped holding it
+    uint16_t modelId = 0;             // 0 = remove
+    uint8_t bone = 0;                 // m_apBones index (< 19)
+    uint8_t boneFlags = 16;           // HOLD_ENTITY_UPDATE_TRANSLATION_ONLY
+    float offX = 0.0f, offY = 0.0f, offZ = 0.0f;
+    uint8_t area = 0;
+private:
+    template <typename Stream> bool Serialize(Stream& stream)
+    {
+        serialize_object(stream, senderPlayerid);
+        serialize_uint32(stream, objectid);
+        serialize_pedid(stream, pedid);
+        serialize_uint16(stream, modelId);
+        serialize_uint8(stream, bone);
+        serialize_uint8(stream, boneFlags);
+        serialize_float(stream, offX); serialize_float(stream, offY); serialize_float(stream, offZ);
+        serialize_uint8(stream, area);
+        return true;
+    }
+};
+
+// interior-service-guest (TANDA 2026-11-18): a guest being served forwards its hidden local keeper's pose and
+// tray to the interior owner (guest -> server -> owner). The owner applies them to the real keeper and its
+// normal interior sync shows the serving sequence to everyone. Native script activity wins; 1.5 s without an
+// update releases the override.
+class InteriorServicePose : public Packet
+{
+    DEFINE_PACKET_TYPE(InteriorServicePose, ePacketType::INTERIOR_SERVICE_POSE, ePacketChannel::EVENT);
+public:
+    SenderPlayerId senderPlayerid{};  // the server stamps it
+    playerid_t owner{};
+    pedid_t pedid{};                  // the visible keeper (the guest knows it from its remote copy)
+    uint8_t area = 0;
+    bool clear = false;
+    char animBlock[16] = {'\0'};
+    uint32_t animHash = 0;
+    uint16_t animFlags = 0;
+    float animTime = 0.0f;
+    float animSpeed = 1.0f;
+    bool hasHeld = false;
+    uint16_t heldModel = 0;
+    uint8_t bone = 0;
+    uint8_t boneFlags = 16;
+    float offX = 0.0f, offY = 0.0f, offZ = 0.0f;
+private:
+    template <typename Stream> bool Serialize(Stream& stream)
+    {
+        serialize_object(stream, senderPlayerid);
+        serialize_playerid(stream, owner);
+        serialize_pedid(stream, pedid);
+        serialize_uint8(stream, area);
+        serialize_bool(stream, clear);
+        if (!clear)
+        {
+            serialize_string(stream, animBlock, 16);
+            animBlock[15] = '\0';
+            serialize_uint32(stream, animHash);
+            serialize_uint16(stream, animFlags);
+            serialize_float(stream, animTime);
+            serialize_float(stream, animSpeed);
+            serialize_bool(stream, hasHeld);
+            if (hasHeld)
+            {
+                serialize_uint16(stream, heldModel);
+                serialize_uint8(stream, bone);
+                serialize_uint8(stream, boneFlags);
+                serialize_float(stream, offX); serialize_float(stream, offY); serialize_float(stream, offZ);
+            }
+        }
+        return true;
+    }
+};
+
 }  // namespace Packets::Peds

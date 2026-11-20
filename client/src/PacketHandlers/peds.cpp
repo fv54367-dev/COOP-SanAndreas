@@ -7,6 +7,7 @@
 #include <CTrainSync.h>
 #include "CPatientHandover.h"
 #include "CInteriorOwnership.h"
+#include "CInteriorObjectSync.h"
 
 static bool IsFiniteVector(const CVector& v)
 {
@@ -16,6 +17,16 @@ static bool IsFiniteVector(const CVector& v)
 PACKET_HANDLER(ePacketType::INTERIOR_POPULATION, Packets::Peds::InteriorPopulation* packet)
 {
     CInteriorOwnership::HandlePopulation(*packet);
+}
+
+PACKET_HANDLER(ePacketType::INTERIOR_HELD_OBJECT, Packets::Peds::InteriorHeldObject* packet)
+{
+    CInteriorObjectSync::HandleHeldObject(packet);
+}
+
+PACKET_HANDLER(ePacketType::INTERIOR_SERVICE_POSE, Packets::Peds::InteriorServicePose* packet)
+{
+    CInteriorObjectSync::HandleServicePose(packet);
 }
 #include <CCarEnterExit.h>
 #include <CPedGroups.h>

@@ -613,6 +613,19 @@ static void ProcessGuestWarps()
     }
 }
 
+bool CCommandPutNetworkPlayersInCar::IsBoardingThisPlayer(playerid_t player)
+{
+    if (!player.valid())
+        return false;
+    if (bBoardingPending && pendingBoarding.playerid == player)
+        return true;
+    for (const auto& warp : guestWarps)
+        if (warp.playerid == player)
+            return true;
+    // the native walk into the seat is only ever started for this game's own player
+    return player == CNetworkPlayerManager::m_localPlayerId && HasWalkingBoardingTask(FindPlayerPed(0));
+}
+
 void CCommandPutNetworkPlayersInCar::ProcessPendingBoarding()
 {
     ProcessGuestWarps();

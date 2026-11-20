@@ -227,6 +227,23 @@ PACKET_HANDLER(ePacketType::VEHICLE_EXIT, Packets::Vehicles::VehicleExit* pVehic
         if (pNetworkVehicle->m_nCreatedBy != MISSION_VEHICLE && !pNetworkVehicle->m_bUsedByPed &&
             !Packets::Trains::IsTrainModel(pNetworkVehicle->m_nModelId))
             pNetworkVehicle->SyncToOccupant();
+        // mission-car-authority-return: a guest who drove a mission car synced it from his game; when he gets out the
+        // script's own game (the authority: Sweet's ped and his driving task live there) takes the car back, or the
+        // car stays frozen where the guest left it (Tagging Up Turf, 2026-11-17)
+        else if (pNetworkVehicle->m_nCreatedBy == MISSION_VEHICLE && pNetworkVehicle->m_pSyncer == pNetworkPlayer &&
+            !pNetworkPlayer->m_bIndividualMode && CConfigManager::GetConfigMissionCarAuthorityReturn())
+        {
+            for (auto pAuthority : CNetworkPlayerManager::m_pPlayers)
+            {
+                if (pAuthority != pNetworkPlayer && !pAuthority->m_bIndividualMode && CCoopMission::IsScriptAuthority(pAuthority))
+                {
+                    logger::info("[vehicle] mission car %s goes back to the script authority %s (left by %s)",
+                        to_string(pNetworkVehicle->m_vehicleId).c_str(), pAuthority->GetName().c_str(), pNetworkPlayer->GetName().c_str());
+                    pNetworkVehicle->ReassignSyncer(pAuthority);
+                    break;
+                }
+            }
+        }
     }
 }
 

@@ -6,10 +6,17 @@ on:
       - '**'
     paths-ignore:
       - '**.md'
+      - 'tareas/**'
+      - 'docs/**'
+      - 'dist/**'
+      - 'publico/**'
+  pull_request:
+    types: [opened, reopened, closed]
   workflow_dispatch:
 
 permissions:
   contents: write
+  pull-requests: write
 
 env:
   GH_TOKEN: ${{ github.token }}
@@ -17,9 +24,8 @@ env:
 
 jobs:
   build:
+    if: github.event_name != 'pull_request'
     runs-on: windows-latest
-    # el testbot tarda ~5-7 min y el build ~3: 40 sobra; sin el, un cuelgue espera 6 h
-    timeout-minutes: 40
     concurrency:
       group: build-${{ github.ref }}
       cancel-in-progress: true
@@ -35,14 +41,79 @@ jobs:
         with:
           xmake-version: latest
 
-      - name: Build, test and publish channel
+      - name: Build and publish channel
         shell: pwsh
         run: .github/scripts/compilar_y_publicar.ps1
 
-      - name: Upload testbot logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
+  # Compila y prueba los pull requests SIN publicar nada: un PR de un fork no puede
+  # crear releases. Reemplaza al viejo comportamiento, donde el job `build` saltaba los
+  # PRs (if: github.event_name != 'pull_request') y nadie compilaba el PR hasta mergearlo.
+  check-pr:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    concurrency:
+      group: check-pr-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (launcher CoopSA)
+        run: rustup default stable
+
+      - name: Install Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
         with:
-          name: testbot-logs
-          path: build/testbot/logs
-          if-no-files-found: ignore
+          xmake-version: latest
+
+      - name: Build and test (no publish)
+        shell: pwsh
+        run: .github/scripts/compilar_y_publicar.ps1 -SoloCompilar
+
+  todo-junto:
+    if: github.event.action != 'closed' || github.event.pull_request.merged != true
+    runs-on: windows-latest
+    concurrency:
+      group: todo-junto
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust (launcher CoopSA)
+        run: rustup default stable
+
+      - name: Merge main with the open PRs
+        id: mezcla
+        shell: pwsh
+        run: .github/scripts/mezclar_prs.ps1
+
+      - name: Install Xmake
+        if: steps.mezcla.outputs.hay == 'true'
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Build and publish the combined channel
+        if: steps.mezcla.outputs.hay == 'true'
+        shell: pwsh
+        run: .github/scripts/compilar_y_publicar.ps1 -Canal todo -Titulo "${{ steps.mezcla.outputs.titulo }}" -Prefijo todo
+
+  limpiar-canal:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: windows-latest
+
+    steps:
+      - name: Delete the channel of the closed branch
+        shell: pwsh
+        env:
+          RAMA: ${{ github.event.pull_request.head.ref }}
+        run: |
+          $canal = ($env:RAMA.ToLower() -replace '[^a-z0-9]+', '-').Trim('-')
+          gh release delete "canal-$canal" --yes --cleanup-tag
+          exit 0

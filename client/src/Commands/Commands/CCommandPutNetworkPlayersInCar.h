@@ -4,8 +4,12 @@
 class CCommandPutNetworkPlayersInCar : public CCustomCommand
 {
 public:
-    // every player of the mission into a free passenger seat of the car, or an equal car of his own behind it
-    static void PutPlayersInCar(CVehicle* pVehicle, bool bMissionBoarding = false);
+    // every player of the mission into a free passenger seat of the car, or an equal car of his own behind it.
+    // Returns how many boardings were sent. `skip`: a player to leave out (defensive: the remote player list never holds
+    // the host of this client).
+    static int PutPlayersInCar(CVehicle* pVehicle, bool bMissionBoarding = false, playerid_t skip = {});
+    // this player has a boarding of ours on its way in (packet waiting for the car, or the native walk already started)
+    static bool IsBoardingThisPlayer(playerid_t player);
     static bool HasMissionPassenger(CVehicle* vehicle, bool includeEntering = false);
     static void ProcessPendingBoarding();
     static void ClearPendingBoarding();

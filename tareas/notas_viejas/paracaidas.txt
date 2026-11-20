@@ -1,0 +1,1 @@
+Solucionar los paracaidas, cuando los jugadores se tiran en paracaidas y lo activan, uno a otros se ven suspendidos en el aire totalmente quietos, lo ideal seria mejor que se pueda ver como caen en sus paracaidas y todo bien.

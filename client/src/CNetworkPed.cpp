@@ -3,6 +3,9 @@
 #include "CJackSync.h"
 #include <CPedModelInfo.h>
 #include "CNetworkPed.h"
+#include "CInteriorObjectSync.h"
+
+
 #include <CTaskSimpleCarSetPedInAsPassenger.h>
 #include <CCarEnterExit.h>
 #include <CTaskSimpleCarSetPedOut.h>
@@ -133,17 +136,36 @@ static bool IsRelevantAnimation(unsigned short group, short animId)
     }
 }
 
+// Peds the game makes inside an interior (diners, clerks) keep m_nAreaCode 0 (testeo 17-11: dup-ped area=0/5, diners
+// hosted with area=0): the interior pose rules must follow the record, which knows the interior, not the engine tag.
+static bool IsInteriorActor(CPed* ped)
+{
+    if (!CConfigLoader::ms_bInteriorPopulationSync)
+        return false;
+    if (ped->m_nAreaCode != 0)
+        return true;
+    if (!CConfigLoader::ms_bInteriorAreaFallback)
+        return false;
+    CNetworkPed* record = CNetworkPedManager::GetPed(ped);
+    return record && record->m_bInteriorPopulation;
+}
+
 // the association with the biggest blend among the whitelisted groups
 static CAnimBlendAssociation* FindRelevantAssociation(CPed* ped)
 {
     if (ped == nullptr || ped->m_pRwClump == nullptr)
         return nullptr;
 
+    // an interior actor's seat pose (the pizzeria diners, 2026-11-18): SEAT_IDLE is a one-shot, it finishes and stays
+    // frozen at full blend while the ped keeps sitting; the playing filter dropped it and the copies stood on the
+    // chairs (the named-anim path below already relaxes it the same way for interiors)
+    const bool interiorActor = IsInteriorActor(ped);
+
     CAnimBlendAssociation* best = nullptr;
     for (CAnimBlendAssociation* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc;
          assoc = RpAnimBlendGetNextAssociation(assoc))
     {
-        if (!assoc->m_bPlaying || assoc->m_fBlendAmount <= 0.0f)
+        if ((!assoc->m_bPlaying && !interiorActor) || assoc->m_fBlendAmount <= 0.0f)
             continue;
         if (!IsRelevantAnimation(assoc->m_nAnimGroup, assoc->m_nAnimId))
             continue;
@@ -183,22 +205,27 @@ static bool IsNamedAnimTask(CPed* ped)
     return false;
 }
 
-static CAnimBlendAssociation* FindNamedAssociation(CPed* ped)
+static CAnimBlendAssociation* FindNamedAssociation(CPed* ped, bool forceInteriorActor = false)
 {
     if (ped == nullptr || ped->m_pRwClump == nullptr)
         return nullptr;
 
     // a script's TASK_PLAY_ANIM in an interior (Home Invasion's sleeping owner, testeo 17-11): the script may play it
-    // as a partial one (INT_HOUSE BED_Loop_R, flags 0x401B) and it was never sent: the copy stood
-    const bool namedTask = CConfigLoader::ms_bInteriorPopulationSync && ped->m_nAreaCode != 0 && IsNamedAnimTask(ped);
+    // as a partial one (INT_HOUSE BED_Loop_R, flags 0x401B) and it was never sent: the copy stood.
+    // the pizzeria diners (Well Stacked, testeo 18-11): PCHAIR plays their seat pose with 0x0812
+    // (TASK_PLAY_ANIM_NON_INTERRUPTABLE), which leaves a partial FOOD association but NO named-anim task
+    // (interior-anim-owner: task=200, primary slots empty, the top full-body anim is the standing idle).
+    // Requiring the task dropped the pose and the copies stood on the chairs: for an interior actor a strong
+    // partial named association is the pose itself, task or not (the bartender's 0x0605 does leave a task).
+    const bool interiorActor = forceInteriorActor || IsInteriorActor(ped);
 
     CAnimBlendAssociation* best = nullptr;
     for (CAnimBlendAssociation* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc;
          assoc = RpAnimBlendGetNextAssociation(assoc))
     {
-        if ((!assoc->m_bPlaying && !(CConfigLoader::ms_bInteriorPopulationSync && ped->m_nAreaCode != 0)) ||
-            assoc->m_fBlendAmount <= 0.0f || (assoc->m_bPartial && !(namedTask && assoc->m_fBlendAmount > 0.5f)) ||
-            (CConfigLoader::ms_bInteriorPopulationSync && ped->m_nAreaCode != 0 && assoc->m_fBlendDelta < 0.0f))
+        if ((!assoc->m_bPlaying && !interiorActor) ||
+            assoc->m_fBlendAmount <= 0.0f || (assoc->m_bPartial && !(interiorActor && assoc->m_fBlendAmount > 0.5f)) ||
+            (interiorActor && assoc->m_fBlendDelta < 0.0f))
             continue;
         if (assoc->m_pHierarchy == nullptr)
             continue;
@@ -212,6 +239,25 @@ static CAnimBlendAssociation* FindNamedAssociation(CPed* ped)
     }
     return best;
 }
+
+bool CNetworkPed::GetNamedPose(CPed* ped, char block[16], uint32_t& hash, uint16_t& flags, float& time, float& speed)
+{
+    CAnimBlendAssociation* assoc = FindNamedAssociation(ped, true);
+    if (!assoc || !assoc->m_pHierarchy)
+        return false;
+    const int blockId = BlockOfHierarchy(assoc->m_pHierarchy);
+    if (blockId < 0 || blockId >= CAnimManager::ms_numAnimBlocks)
+        return false;
+    memset(block, 0, 16);
+    strncpy_s(block, 16, CAnimManager::ms_aAnimBlocks[blockId].szName, _TRUNCATE);
+    hash = assoc->m_pHierarchy->m_hashKey;
+    flags = assoc->m_nFlags;
+    time = assoc->m_fCurrentTime;
+    speed = assoc->m_fSpeed;
+    return true;
+}
+
+
 
 // D bug 3: the periodic resend of the state is only worth it near another player (indoors that is a handful of peds)
 static bool IsNearAnyNetworkPlayer(CPed* ped, float radius)
@@ -466,6 +512,9 @@ bool CNetworkPed::CreateGamePed(CVector pos)
 void CNetworkPed::DestroyGamePed(const char* reason)
 {
     if (m_pPed) LogCopyReason(reason);
+    CInteriorObjectSync::OnPedDestroyed(this);
+
+
     // the association belongs to the clump that is going away, and the block it played from must be free again
     ReleaseSyncedAnimBlock();
     m_pSyncedAnim = nullptr;
@@ -640,17 +689,29 @@ CNetworkPed* CNetworkPed::CreateHosted(CPed* ped)
     networkPed->m_nCreatedBy = ped->m_nCreatedBy;
     networkPed->m_nModelId = ped->m_nModelIndex;
     networkPed->m_nPedType = static_cast<ePedType>(ped->m_nPedType);  // used when this record is re-created in another client
-    networkPed->m_nAreaCode = ped->m_nAreaCode;
+    unsigned char hostedArea = ped->m_nAreaCode;
+    // interior-area-fallback: a ped the game makes inside an interior has no area tag (diners, clerks; testeo 17-11):
+    // it takes the interior we stand in (interiors are far from the main map, so distance is enough)
+    if (hostedArea == 0 && CConfigLoader::ms_bInteriorPopulationSync && CConfigLoader::ms_bInteriorAreaFallback)
+    {
+        CPlayerPed* local = FindPlayerPed(0);
+        if (local && local->m_nAreaCode != 0 && ped != local && ped->m_matrix &&
+            (CInteriorOwnership::IsServicePed(ped) ||
+                (ped->m_nCreatedBy != MISSION_CHAR && COpCodeSync::GetScriptRunningCommand() == nullptr)) &&
+            DistanceBetweenPoints(ped->GetPosition(), local->GetPosition()) < CInteriorOwnership::SAME_INTERIOR_RADIUS)
+            hostedArea = local->m_nAreaCode;
+    }
+    networkPed->m_nAreaCode = hostedArea;
     networkPed->m_bSyncing = true;
     networkPed->m_bInteriorPopulation = CConfigLoader::ms_bInteriorPopulationSync &&
-        (CInteriorOwnership::IsServicePed(ped) || (ped->m_nCreatedBy != MISSION_CHAR && ped->m_nAreaCode != 0 &&
+        (CInteriorOwnership::IsServicePed(ped) || (ped->m_nCreatedBy != MISSION_CHAR && hostedArea != 0 &&
             COpCodeSync::GetScriptRunningCommand() == nullptr));
     if (CConfigLoader::ms_bInteriorPopulationSync)
         if (auto script = COpCodeSync::GetScriptRunningCommand(); script && script->m_bIsMission)
             networkPed->m_nCreatedBy = MISSION_CHAR;
     if (networkPed->m_bInteriorPopulation)
-        CMissionMirror::LogEventf("interior-publish ped=%s model=%d area=%u", to_string(networkPed->m_pedId).c_str(),
-            ped->m_nModelIndex, ped->m_nAreaCode);
+        CMissionMirror::LogEventf("interior-publish ped=%s model=%d area=%u ped-area=%u",
+            to_string(networkPed->m_pedId).c_str(), ped->m_nModelIndex, hostedArea, ped->m_nAreaCode);
 
     CNetworkPedManager::Add(networkPed);
 
@@ -1463,7 +1524,8 @@ bool CNetworkPed::ApplyNamedAnimState(Packets::Peds::PedTaskState& packet)
     if (m_pSyncedAnim != nullptr)
     {
         m_pSyncedAnim->SetCurrentTime(packet.animTime);
-        if (packet.animSpeed > 0.0f && packet.animSpeed < 5.0f)
+        if (packet.animSpeed > 0.0f &&
+            packet.animSpeed <= (CConfigLoader::ms_bInteriorServiceGuest ? 1000.0f : 5.0f))
             m_pSyncedAnim->m_fSpeed = packet.animSpeed;
     }
     return true;
@@ -1805,7 +1867,7 @@ void CNetworkPed::UpdateTaskSync()
     {
         CAnimBlendAssociation* relevant = FindRelevantAssociation(ped);
         CAnimBlendAssociation* namedPose = CConfigLoader::ms_bNpcNamedAnimSync ? FindNamedAssociation(ped) : nullptr;
-        if (CConfigLoader::ms_bInteriorPopulationSync && ped->m_nAreaCode != 0 && namedPose &&
+        if (IsInteriorActor(ped) && namedPose &&
             (!relevant || namedPose->m_fBlendAmount >= relevant->m_fBlendAmount))
             relevant = nullptr;
         if (CAnimBlendAssociation* assoc = relevant)
@@ -1858,11 +1920,43 @@ void CNetworkPed::UpdateTaskSync()
         if (top && top->m_pHierarchy && BlockOfHierarchy(top->m_pHierarchy) >= 0 &&
             BlockOfHierarchy(top->m_pHierarchy) < CAnimManager::ms_numAnimBlocks)
             topBlock = CAnimManager::ms_aAnimBlocks[BlockOfHierarchy(top->m_pHierarchy)].szName;
+        // the five primary slots (physical response, temp / non-temp event response, primary, default): the diners'
+        // sit task may live in a slot other than the primary one that is sent
+        int slotTypes[5];
+        for (int i = 0; i < 5; i++)
+        {
+            CTask* slotTask = taskManager.m_aPrimaryTasks[i];
+            slotTypes[i] = slotTask ? slotTask->GetTaskType() : -1;
+        }
         CMissionMirror::LogEventf("interior-anim-owner model=%d task=%d has=%d named=%d group=%d id=%d block=%.15s "
-            "top-group=%d top-id=%d top-block=%.15s top-blend=%.2f top-playing=%d top-flags=%u",
+            "top-group=%d top-id=%d top-block=%.15s top-blend=%.2f top-playing=%d top-flags=%u slots=%d,%d,%d,%d,%d "
+            "ped-area=%d rec-area=%u",
             ped->m_nModelIndex, (int)taskType, hasAnim ? 1 : 0, namedAnim ? 1 : 0, (int)animGroup, (int)animId,
             animBlock, top ? (int)top->m_nAnimGroup : -2, top ? (int)top->m_nAnimId : -2, topBlock,
-            top ? top->m_fBlendAmount : 0.0f, top ? (int)top->m_bPlaying : 0, top ? (unsigned)top->m_nFlags : 0u);
+            top ? top->m_fBlendAmount : 0.0f, top ? (int)top->m_bPlaying : 0, top ? (unsigned)top->m_nFlags : 0u,
+            slotTypes[0], slotTypes[1], slotTypes[2], slotTypes[3], slotTypes[4], (int)ped->m_nAreaCode,
+            (unsigned)m_nAreaCode);
+        // the partial named pose (PCHAIR's 0x0812 leaves no task): what the relaxed filter publishes
+        CAnimBlendAssociation* part = nullptr;
+        for (CAnimBlendAssociation* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc;
+             assoc = RpAnimBlendGetNextAssociation(assoc))
+        {
+            if (assoc->m_bPartial && assoc->m_nAnimGroup == NAMED_ANIM_GROUP && assoc->m_fBlendAmount > 0.0f &&
+                (part == nullptr || assoc->m_fBlendAmount > part->m_fBlendAmount))
+                part = assoc;
+        }
+        const char* partBlock = "";
+        if (part && part->m_pHierarchy)
+        {
+            const int partBlockId = BlockOfHierarchy(part->m_pHierarchy);
+            if (partBlockId >= 0 && partBlockId < CAnimManager::ms_numAnimBlocks)
+                partBlock = CAnimManager::ms_aAnimBlocks[partBlockId].szName;
+        }
+        CMissionMirror::LogEventf("interior-anim-owner-part model=%d part=%d block=%.15s hash=%08X blend=%.2f "
+            "flags=%u playing=%d named-task=%d",
+            ped->m_nModelIndex, part ? 1 : 0, partBlock, part && part->m_pHierarchy ? part->m_pHierarchy->m_hashKey : 0u,
+            part ? part->m_fBlendAmount : 0.0f, part ? (unsigned)part->m_nFlags : 0u,
+            part ? (int)part->m_bPlaying : 0, IsNamedAnimTask(ped) ? 1 : 0);
     }
 
     // D bug 3: while the ped has an animation, resend the whole state every 3 s; a copy that streamed in (or that

@@ -1,4 +1,5 @@
 #include "network/packets/peds.h"
+#include <unordered_map>
 #include "network/packet_types.h"
 #include "stdafx.h"
 #include "CHandover.h"
@@ -609,4 +610,92 @@ PACKET_HANDLER(ePacketType::PED_RECRUIT, Packets::Peds::PedRecruit* packet, CNet
     ped->m_pRecruiter = player;
     if (ped->m_pSyncer != player)
         CHandover::AssignPed(ped, player);
+}
+
+// interior-object-sync / interior-service-guest routing (TANDA 2026-11-18): every pizza branch shares the
+// same area code, so both packets stay inside the sender's room (area + 150 m, the INTERIOR_POPULATION rule).
+// The sender is stamped server-side; guests additionally drop held-object packets from a non-current owner.
+PACKET_HANDLER(ePacketType::INTERIOR_HELD_OBJECT, Packets::Peds::InteriorHeldObject* packet, CNetworkPlayer* sender)
+{
+    if (!sender->m_nPopulationArea || g_serverTime - sender->m_nPopulationSeen > 3000)
+        return;
+    if (packet->area != sender->m_nPopulationArea)
+        return;
+    // a removal may arrive after the ped record is gone; a publication needs a ped hosted by the sender
+    if (packet->modelId != 0)
+    {
+        bool pedOk = false;
+        for (auto ped : CNetworkPedManager::m_pPeds)
+        {
+            if (ped->m_pedId == packet->pedid && ped->m_pSyncer == sender && ped->m_bInteriorPopulation &&
+                ped->m_nAreaCode == packet->area &&
+                PopulationDistanceSqr(ped->m_vecPos, sender->m_vecPopulationPos) < 22500.0f)
+            {
+                pedOk = true;
+                break;
+            }
+        }
+        if (!pedOk)
+            return;
+    }
+    packet->senderPlayerid = sender->m_playerId;
+    for (auto member : CNetworkPlayerManager::m_pPlayers)
+    {
+        if (member != sender && member->m_nPopulationArea == packet->area &&
+            g_serverTime - member->m_nPopulationSeen <= 3000 &&
+            PopulationDistanceSqr(member->m_vecPopulationPos, sender->m_vecPopulationPos) < 22500.0f)
+            GetPacketFactory().Send(*packet, member);
+    }
+}
+
+PACKET_HANDLER(ePacketType::INTERIOR_SERVICE_POSE, Packets::Peds::InteriorServicePose* packet, CNetworkPlayer* sender)
+{
+    if (!sender->m_nPopulationArea || g_serverTime - sender->m_nPopulationSeen > 3000 || sender->m_bIndividualMode)
+        return;
+    if (packet->area != sender->m_nPopulationArea)
+        return;
+    // the room owner is the lowest population order (same election as INTERIOR_POPULATION)
+    CNetworkPlayer* owner = nullptr;
+    for (auto candidate : CNetworkPlayerManager::m_pPlayers)
+    {
+        if (candidate->m_nPopulationArea == sender->m_nPopulationArea &&
+            g_serverTime - candidate->m_nPopulationSeen <= 3000 &&
+            PopulationDistanceSqr(candidate->m_vecPopulationPos, sender->m_vecPopulationPos) < 22500.0f &&
+            (owner == nullptr || candidate->m_nPopulationOrder < owner->m_nPopulationOrder))
+            owner = candidate;
+    }
+    if (owner == nullptr || owner == sender || packet->owner != owner->m_playerId)
+        return;
+    bool pedOk = false;
+    for (auto ped : CNetworkPedManager::m_pPeds)
+    {
+        if (ped->m_pedId == packet->pedid && ped->m_pSyncer == owner && ped->m_bInteriorPopulation &&
+            ped->m_nAreaCode == packet->area &&
+            PopulationDistanceSqr(ped->m_vecPos, sender->m_vecPopulationPos) < 22500.0f)
+        {
+            pedOk = true;
+            break;
+        }
+    }
+    if (!pedOk)
+        return;
+    // throttle updates per sender (~the guest's 150 ms cadence); dedupe consecutive clears
+    static std::unordered_map<uint32_t, uint64_t> lastServicePose;
+    static std::unordered_map<uint32_t, bool> lastServiceClear;
+    if (!packet->clear)
+    {
+        auto it = lastServicePose.find(sender->m_playerId.value());
+        if (it != lastServicePose.end() && g_serverTime - it->second < 150)
+            return;
+        lastServicePose[sender->m_playerId.value()] = g_serverTime;
+    }
+    else
+    {
+        auto it = lastServiceClear.find(sender->m_playerId.value());
+        if (it != lastServiceClear.end() && it->second)
+            return;
+    }
+    lastServiceClear[sender->m_playerId.value()] = packet->clear;
+    packet->senderPlayerid = sender->m_playerId;
+    GetPacketFactory().Send(*packet, owner);
 }

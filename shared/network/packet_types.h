@@ -158,7 +158,9 @@
     X(CHEAT_ANNOUNCE) \
     X(CLIENT_CONFIG_OVERRIDE) \
     X(STORY_HELP) \
-    X(STORY_CONTACTS) 
+    X(STORY_CONTACTS) \
+    X(INTERIOR_HELD_OBJECT) \
+    X(INTERIOR_SERVICE_POSE) 
 
 enum class ePacketType : uint16_t
 {

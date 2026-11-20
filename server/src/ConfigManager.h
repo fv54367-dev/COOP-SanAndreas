@@ -13,7 +13,7 @@ public:
 
     inline static const std::unordered_map<std::string, uint16_t> ms_umDefaultConfig = {
         {"upnp", 1}, {"voice-chat", 1}, {"voice-range", 50}, {"port", Config::DEFAULT_PORT}, {"maxplayers", Config::MAX_SERVER_PLAYERS}, {"persistence", 1}, {"tp-request", 1},
-        {"handover", 1}, {"host-leave-abort", 1}, {"autosave-minutes", 10}, {"save-backups", 5},
+        {"handover", 1}, {"host-leave-abort", 1}, {"mission-car-authority-return", 1}, {"autosave-minutes", 10}, {"save-backups", 5},
         {"coop-side-missions", 1}, {"mission-lock", 1}, {"server-log-file", 1}, {"packet-validation", 1}, {"clear-messages", 1}};
 
     static bool GetUpnp();
@@ -47,6 +47,7 @@ public:
     static uint32_t GetConfigModCheck();
     // E: the host leaving in the middle of a coop mission aborts it for everyone (MISSION_ABORTED). Default 1
     static bool GetConfigHostLeaveAbort();
+    static bool GetConfigMissionCarAuthorityReturn();
     // server-client-config: [clientes] section, switch = true/false of coopandreas.ini imposed on every player's game
     static std::vector<std::pair<std::string, bool>> GetClientOverrides();
     // E: minutes between automatic saves of all players (0 = off). Default 10

@@ -15,6 +15,10 @@ public:
     // called before every command of every script (CommandHooks): true = do not run it now, the script yields and tries
     // again on the next frame
     static bool ShouldHold(CRunningScript* script, unsigned short opcode);
+    static bool ShouldHoldCore(CRunningScript* script, unsigned short opcode);
+    // called before every command of every script: keeps the tags sprayed while the script was held from being
+    // un-sprayed by its own SET_TAG_STATUS_IN_AREA (mission-hold-keep-tags)
+    static void OnCommandStart(CRunningScript* script, unsigned short opcode);
     // the last hold of this script was released (the scene started, or it gave up)
     static void Reset();
     // every player of the mission who is not where the authority is stands outside close to the door he went through (they

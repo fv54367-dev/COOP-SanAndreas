@@ -3,6 +3,9 @@
 #include <CTaskComplexEnterCarAsPassenger.h>
 #include <CTaskComplexLeaveCar.h>
 #include "stdafx.h"
+#include "CInteriorObjectSync.h"
+
+
 #include "CPedDamageSync.h"
 #include "CInteriorOwnership.h"
 #include "CNetworkVehicle.h"
@@ -492,6 +495,8 @@ void CNetworkPedManager::Process()
             ped->m_fLookDirection = networkPed->m_fLookDirection;
         }
     }
+
+    CInteriorObjectSync::FrameUpdate();
 }
 
 void CNetworkPedManager::AssignHost()

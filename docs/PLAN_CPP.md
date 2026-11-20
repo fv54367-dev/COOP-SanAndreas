@@ -1,0 +1,31 @@
+# Plan: coop en C++ con scripts originales (2026-10-25)
+
+Objetivo: dejar `main.scm` y los scripts de misión **originales** (partidas compatibles, sin offsets corridos, sin el límite de 69000) y que todo lo coop viva en C++, en módulos separados, con validaciones (si algo no coincide, no hace nada y la misión sigue como en el juego normal) y logs. Las ideas de SACoop se toman **solo como ideas** (no tiene licencia): el código se escribe de cero, con gta-reversed como referencia.
+
+## Dónde estamos
+- 131 scripts usan `Coop.*` (vienen de CoopAndreas de base), unas 6000 llamadas. Las más usadas: checkpoints y blips "para todos" (≈3900), `TeleportAllNetworkPlayersToHost` (661), `IsNetworkPlayerActorValid` (330), `PrintNowForNetworkPlayer` (186), `EnableSyncingThisScript` (100).
+- Nuestros cambios propios en SCM desde `base`: 25 scripts (las secundarias con `ChooseSideMissionMode`, `INTRO2`, `SWEET4`, `HOODS5`, `AMBULAN`).
+- Ya hay capa espejo en C++ (`CMissionMirror`, `CMirrorPolicy`, `CCameraMirror`): la migración la completa en vez de empezar de cero.
+
+## Fases (cada una se prueba en juego antes de la siguiente)
+0. **Diagnóstico** (hecho): `CHangWatchdog` — informe de congelamiento en `CoopAndreas_crashes\hang_*.log` y vigilancia de escritura por `CoopAndreas_watch.txt` (punto de interrupción por hardware) para cazar los crashes "al azar" por memoria pisada.
+1. **Reglas de misión: quedan como están** (decisión del usuario, 2026-10-25). Las misiones esperan a todos los jugadores en coop (marcador de inicio, puntos de espera como Ryder y Drive-By). **No** se toma de SACoop "cualquier jugador avanza / un solo jugador en el marcador arranca para todos" ni "el host se teletransporta al que avanzó". Al pasar a C++, los ajustes de `INTRO2`/`SWEET4` se reescriben con la misma regla de esperar a todos.
+2. **Marcadores nativos en el invitado** (hecho: `CMissionAreaMarkers`) (idea de SACoop): el dueño manda el `LOCATE` con esfera y el invitado lo ejecuta con su propio jugador; el juego dibuja el marcador como siempre. Ataca de raíz los "marcadores invisibles" (hoy `CNetworkCheckpoint` dibuja uno propio) y vuelve innecesarios los `Update/RemoveCheckpointForAllNetworkPlayers`.
+3. **Blips y textos por espejo** (blips hechos: `CMirrorBlips`, M2 de project_gta_sa_coop; las misiones con blips por jugador siguen con `Coop.*`; los textos ya estaban por espejo desde M1): completar `CMissionMirror` para que capture los blips y textos del script del dueño y los traduzca (handle del host → copia local). Vuelve innecesarios los `*BlipForAllNetworkPlayers` y `PrintNowForNetworkPlayer`.
+4. **Sincronizar por nombre de script** (hecho: `CMissionSyncRules` — registro de scripts, teletransporte tras mover al host, checkpoints, esperar a todos en el cilindro; análisis en `docs/FASE4_ANALISIS.md`; falta: checkpoints de carrera `06D5`, lanzadores que esperen a todos, regla "objetivo de vehículo"): tabla en C++ en vez de `EnableSyncingThisScript`; `IsHost`/`IsNetworkPlayerActorValid`/teletransportes por reglas en C++ (al empezar la misión, el que está a +40 m va atrás del host).
+5. **Secundarias** (hecho 2026-10-25, dormido hasta la fase 6: `CSideMissionRules` con `vanilla-scripts = true`; falta la recompensa de Vigilante nivel 12 y el puntaje VS de DANCE/LOWR): `ChooseSideMissionMode` y recompensas por gancho al script original.
+6. **Volver a los scripts originales** — **en uso desde 2026-10-25** (`MODO_SCRIPTS_ORIGINALES.bat`). Hecho: lanzadores (03EE), offsets verificados (iguales), objetivo de vehículo, checkpoints de carrera, `vanilla-scripts` en `CPatch`. Queda (menor): textos solo del invitado, puntaje VS de DANCE/LOWR, recompensa de Vigilante 12, blip de Big Smoke solo del host. Lo que decía antes:
+   - **Lanzadores** (lo más grande): con el `main.scm` original cada jugador arrancaría la misión en su juego. Hoy `Coop.LocateAllPlayersOnFoot3D` (SWEET, INT) decide quién la arranca (la autoridad), espera a todos en el marcador, bloquea misiones de historia, compara progreso y deja Cesar Vialpando individual. Hay que hacerlo en C++ para el `LOCATE` de inicio de todos los lanzadores (SWEET, SMOKE, RYDER, CESAR, etc.).
+   - **Offsets de globales**: el C++ lee variables de `main.scm` por posición (contador de Sweet `ScriptSpace+1808`, contadores de cadenas de `CMissionMode`, `$onmission` `+1636`, etc.). Hay que verificarlos contra el `main.scm` original (`GTA_JUGADORx\data\script\main.scm`, 3.079.599 bytes) antes de cambiar.
+   - **Lógica por jugador** de las 11 misiones que se pierde: BMX de cada uno (INTRO1), autos extra con Uzi (DRUGS1), el auto de Ryder para el 3º (SWEET1), textos solo para el invitado ("subí al auto"). Regla "objetivo de vehículo" + autos clon cuando faltan asientos (análisis sección 5).
+   - Checkpoints de carrera `06D5`, puntaje VS de DANCE/LOWR, peds de tiendas y POOL2 (`Coop.ClaimPedOnRelease`), recompensa de Vigilante nivel 12, blip de Big Smoke solo del host (`INTRO`).
+   - Recién con eso: copiar el `main.scm`/`script.img` originales a `CoopAndreas\`, `vanilla-scripts = true`, y las partidas viejas dejan de servir una última vez.
+
+
+## Otras cosas de SACoop para más adelante
+Solo lo que no contradice nuestras reglas. Descartado por contradecirlas: un solo jugador arranca o avanza la misión para todos, el host que se va al lado del invitado, las estrellas compartidas del grupo, el guardado del host copiado a todos (el progreso, el dinero y las estrellas son de cada uno).
+- PNJ que también atacan a los invitados: copiar las relaciones del tipo de ped del jugador al tipo de los jugadores remotos (tabla 0xC0BBE8), y repartir los "cazadores" (`TASK_KILL_CHAR_ON_FOOT` sobre el host) al jugador más cercano.
+- Pickups de misión ramasados por un invitado que cuentan en el host (anillo de pickups recogidos 0x978628, `HAS_PICKUP_BEEN_COLLECTED`).
+- Animaciones de acción copiadas leyendo `RpAnimBlendClumpData` (relevante para los peds sin animación) y movimiento de los remotos con `CTaskSimpleGoToPoint` para que las animaciones de caminar sean las del juego.
+- Objetos del decor movidos (caja, barril) iguales en todos, identificados por su objeto factice de origen.
+- 60 FPS con los arreglos de **Framerate Vigilante** (MIT: se toma del repo original, no de SACoop).

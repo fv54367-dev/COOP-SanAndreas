@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "CInteriorOwnership.h"
+#include "CInteriorObjectSync.h"
 #include <COpCodeSync.h>
 #include <CCoopMission.h>
 #include <CMissionMode.h>
@@ -47,6 +48,15 @@ void CInteriorOwnership::ObserveLocalPed(CPed* ped)
     }
 }
 
+std::vector<CPed*> CInteriorOwnership::GetHiddenServicePeds()
+{
+    std::vector<CPed*> out;
+    for (CPed* ped : s_hiddenPeds)
+        if (ped && ped->IsVTableValid() && IsServicePed(ped))
+            out.push_back(ped);
+    return out;
+}
+
 bool CInteriorOwnership::AdoptServicePed(CNetworkPed* networkPed)
 {
     if (!CConfigLoader::ms_bInteriorPopulationSync || !networkPed->m_bInteriorPopulation ||
@@ -76,6 +86,58 @@ bool CInteriorOwnership::AdoptServicePed(CNetworkPed* networkPed)
         OnPedTakeover(s_nAreaCode);
         CMissionMirror::LogEventf("interior-adopt-service ped=%s model=%d area=%u",
             to_string(networkPed->m_pedId).c_str(), local->m_nModelIndex, s_nAreaCode);
+        return true;
+    }
+    // Owner flicker on entry (testeo 18-11): we became owner again and RestoreHiddenPeds re-showed AND
+    // re-hosted our native keepers before the take-over records arrived; the hidden pass above finds nothing
+    // and the take-over would create a second, overlapping keeper (two pizzeros at the same till). Adopt the
+    // visible native keeper into the take-over record and unpublish our own duplicate record of it.
+    // NEAREST match: two same-model keepers stand 3.3 m apart, inside the 4 m radius (first-match would merge
+    // the wrong keeper into the second take-over record).
+    CPed* best = nullptr;
+    float bestDist = 4.0f;
+    for (CPed* local : servicePeds)
+    {
+        if (!local || !local->IsVTableValid() || !local->m_matrix || !local->IsAlive() ||
+            local->m_nModelIndex != networkPed->m_nModelId)
+            continue;
+        const float dist = DistanceBetweenPoints(local->GetPosition(), networkPed->m_vecLastPos);
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            best = local;
+        }
+    }
+    if (best)
+    {
+        CNetworkPed* existing = CNetworkPedManager::GetPed(best);
+        if (existing == networkPed)
+            return true;  // already adopted
+        if (existing && !existing->m_bSyncing)
+            return false;  // somebody else's record: not ours to merge
+        if (existing)
+        {
+            // our own duplicate publication of the same physical keeper: remove it for everyone, keep the ped
+            CMissionMirror::LogEventf("interior-dedupe-service ped=%s keep=%s model=%d",
+                to_string(existing->m_pedId).c_str(), to_string(networkPed->m_pedId).c_str(),
+                best->m_nModelIndex);
+            CNetworkPedManager::Remove(existing);
+            delete existing;
+        }
+        networkPed->DestroyGamePed("interior-adopt-service");
+        networkPed->m_pPed = best;
+        networkPed->m_bAdoptedServicePed = true;
+        best->RegisterReference((CEntity**)&networkPed->m_pPed);
+        best->m_bIsVisible = true;
+        best->m_bUsesCollision = true;
+        best->m_fHealth = networkPed->m_fHealth;
+        networkPed->m_nLocalModelId = best->m_nModelIndex;
+        networkPed->m_bStreamedOut = false;
+        networkPed->m_bPendingTaskState = false;
+        networkPed->m_bHasLastTaskState = false;
+        OnPedTakeover(s_nAreaCode);
+        CMissionMirror::LogEventf("interior-adopt-service-visible ped=%s model=%d area=%u",
+            to_string(networkPed->m_pedId).c_str(), best->m_nModelIndex, s_nAreaCode);
         return true;
     }
     return false;
@@ -287,6 +349,7 @@ void CInteriorOwnership::BecomeOwner(bool unconfirmed)
 {
     s_role = Role::Owner;
     s_ownerId = CNetworkPlayerManager::m_localPlayerId;
+    CInteriorObjectSync::OnRoleChanged();
     s_bOwnerUnconfirmed = unconfirmed;
     s_nOwnerMissingTicks = 0;
     const bool gotTakeover = CConfigLoader::ms_bInteriorPopulationSync && s_bGotTakeover;
@@ -326,6 +389,7 @@ void CInteriorOwnership::BecomeGuest(playerid_t ownerId)
 
     s_role = Role::Guest;
     s_ownerId = ownerId;
+    CInteriorObjectSync::OnRoleChanged();
     s_bOwnerUnconfirmed = false;
     s_nOwnerMissingTicks = 0;
     s_nHandoverGraceUntil = 0;
@@ -341,6 +405,7 @@ void CInteriorOwnership::LeaveInterior()
 
     s_role = Role::None;
     s_ownerId = playerid_t();
+    CInteriorObjectSync::OnRoleChanged();
     s_bOwnerUnconfirmed = false;
     s_nOwnerMissingTicks = 0;
     s_nHandoverGraceUntil = 0;

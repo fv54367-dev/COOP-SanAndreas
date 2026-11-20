@@ -1,0 +1,48 @@
+name: Build on Windows
+
+on:
+  push:
+    branches:
+      - '**'
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    # el testbot tarda ~5-7 min y el build ~3: 40 sobra; sin el, un cuelgue espera 6 h
+    timeout-minutes: 40
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (launcher CoopSA)
+        run: rustup default stable
+
+      - name: Install Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Build, test and publish channel
+        shell: pwsh
+        run: .github/scripts/compilar_y_publicar.ps1
+
+      - name: Upload testbot logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testbot-logs
+          path: build/testbot/logs
+          if-no-files-found: ignore

@@ -34,6 +34,9 @@ private:
 		{"npc-synced-pose-keep", "true"},
 		{"interior-handover", "true"},
         {"interior-population-sync", "true"},
+        {"interior-area-fallback", "true"},
+        {"interior-object-sync", "true"},
+        {"interior-service-guest", "true"},
 		{"mission-interior-safety", "true"},
 		{"handover", "true"},
 		{"zone-population", "true"},
@@ -86,6 +89,7 @@ private:
 		{"mission-hunters", "false"},
 		{"mirror-blips", "true"},
 		{"mission-sync-rules", "true"},
+		{"intro-board", "true"},
         {"intro-independent", "true"},
         {"native-hints", "true"},
         {"mission-wait-notices", "true"},
@@ -180,6 +184,7 @@ private:
 		{"mission-any-player-in-car", "true"},
 		{"mission-any-player-trigger", "true"},
 		{"mission-boarding-shared-car", "true"},
+		{"mission-no-midcar", "true"},
 		{"mission-guest-car-host-reach", "true"},
 		{"mission-guest-vehicles-self-board", "true"},
 		{"mission-guest-weapon-parity", "true"},
@@ -199,6 +204,7 @@ private:
 		{"skip-death-arrest-help", "false"},
 		{"train-sync", "true"},
 		{"train-sync-rail", "true"},
+		{"train-sync-keep", "true"},
 		{"vehicle-damage-any-player", "true"},
 		{"voice-toggle", "false"},
 		{"vs-lobby-helpbox", "true"},
@@ -335,6 +341,10 @@ public:
 	// hosting) our own hidden population
 	static inline bool ms_bInteriorHandover = true;
     static inline bool ms_bInteriorPopulationSync = true;
+    // interior-population-sync: peds the game makes inside an interior (diners) have no area tag; take the local one
+    static inline bool ms_bInteriorAreaFallback = true;
+	static inline bool ms_bInteriorObjectSync = true;
+	static inline bool ms_bInteriorServiceGuest = true;
 	// Keep authority mission peds and defer occupied interior access closures.
 	static inline bool ms_bMissionInteriorSafety = true;
 	// ambient peds/vehicles the game removes are handed over to another client (B2) instead of being deleted for
@@ -386,9 +396,16 @@ public:
 	static inline bool ms_bTrainSync = true;
 	// rail-distance sync refinements (CTrainSync): 10 Hz state, elapsed-time jump test, copy never pushed backwards
 	static inline bool ms_bTrainSyncRail = true;
+	// host: protect a train a guest still needs from the vanilla generator's 220 m removal; it may only mask chains
+	// the generator would delete by itself, because a masked chain is also invisible to its "is there a train" count
+	static inline bool ms_bTrainSyncKeep = true;
 	static inline bool ms_bMirrorBlips = true;
 	// phase 4: the synced scripts and the teleports to the host decided in C++ (CMissionSyncRules)
 	static inline bool ms_bMissionSyncRules = true;
+	// INTRO1 (Big Smoke's house, 2026-11-19): the guests board the mission's Perennial as soon as the host walks to it,
+	// instead of waiting for the host to be seated (the script fades to the cemetery ~3 s later and mission-no-auto-board
+	// leaves the seat empty). Scoped to mission 11 and model 404.
+	static inline bool ms_bIntroBoard = true;
     static inline bool ms_bIntroIndependent = true;
     // hints in the game's own style (help box, mission text) for the guests at launchers and for the mod's mission notices
     static inline bool ms_bNativeHints = true;
@@ -414,6 +431,8 @@ public:
 	static inline bool ms_bMissionNoAutoBoard = true;
 	// a scene the script starts after taking the player's control away is not held (nobody can walk to it; SWEET1)
 	static inline bool ms_bMissionSceneSkipNoControl = true;
+	// the tags a player sprays while the script is held at a scene survive the script's later un-spray of that area (SWEET1)
+	static inline bool ms_bMissionHoldKeepTags = true;
 	// a guest loads the cutscene's text table itself when its subtitle keys do not resolve
 	static inline bool ms_bCutsceneTableFallback = true;
 	// the intro chain (INT: Big Smoke, Ryder) follows the host's contact blips; it has no guest launcher
@@ -422,6 +441,8 @@ public:
 	static inline bool ms_bMirrorBlipsClearOnEnd = true;
 	// a guest removes his own empty ambient car that sits inside a mission car copy of the host (Tagging Up Turf twin car)
 	static inline bool ms_bMissionCarOverlapDedupe = true;
+	// the stuck $onmission watchdog (CSaveMenu) leaves alone the flag the phone-call scripts (MOB_*) raise while a call rings or plays
+	static inline bool ms_bPhoneCallKeepsOnMission = true;
 	// at the end of a scripted scene the local guest stays next to the authority (safe spot), not at his old position
 	static inline bool ms_bSceneGuestEndNearHost = true;
 	// Catalyst: guests are attached to the caboose beside the owner so that they also throw crates from the moving train
@@ -513,6 +534,8 @@ public:
 	static inline bool ms_bCoopCarGunners = true;
 	// mission boarding: the guests the host's car has no seat for share one 4-door car next to it
 	static inline bool ms_bMissionBoardingSharedCar = true;
+	// no shared guest car is created when the host boards a full mission car mid-mission (any mission)
+	static inline bool ms_bMissionNoMidCar = true;
 	// the mission's on-screen countdown stands still while the players wait for each other (CMissionHints)
 	static inline bool ms_bMissionWaitPauseTimer = true;
 	// TWAR7: Freddy's pace follows the mission's nearest player, not only the host

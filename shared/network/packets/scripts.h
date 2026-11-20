@@ -887,6 +887,23 @@ public:
     float heading = 0, fov = 70, mouseX = 0, mouseY = 0;
     bool joypad = false;
     int16_t keys[20]{};
+    bool hiddenShooter = false;
+    struct Hud {
+        static constexpr uint8_t MaxText = 24, MaxRects = 3;
+        enum : uint8_t { PANEL, BALL, NIB };
+
+        struct Text {
+            float x = 0, y = 0, scaleX = 0, scaleY = 0;
+            uint32_t color = 0;
+            int32_t number = -1;
+            uint8_t key = 0, font = 0, align = 0;
+        } texts[MaxText]{};
+        struct Rect {
+            float left = 0, top = 0, right = 0, bottom = 0;
+            uint8_t kind = PANEL;
+        } rects[MaxRects]{};
+        uint8_t help = 0, textCount = 0, rectCount = 0;
+    } hud;
     struct Anim {
         char block[16]{};
         uint32_t hash = 0;
@@ -916,6 +933,26 @@ private:
         }
         if (action == VIEW || action == RESULT) serialize_int(stream, turn, 0, 1);
         if (action == VIEW) {
+            serialize_bool(stream, hiddenShooter);
+            serialize_int(stream, hud.help, 0, 9);
+            serialize_int(stream, hud.textCount, 0, Hud::MaxText);
+            for (auto i = 0; i < hud.textCount; ++i) {
+                auto& text = hud.texts[i];
+                serialize_int(stream, text.key, 0, 31);
+                serialize_int(stream, text.font, 0, 3);
+                serialize_int(stream, text.align, 0, 2);
+                serialize_float(stream, text.x); serialize_float(stream, text.y);
+                serialize_float(stream, text.scaleX); serialize_float(stream, text.scaleY);
+                serialize_uint32(stream, text.color);
+                serialize_int(stream, text.number, -1, 16);
+            }
+            serialize_int(stream, hud.rectCount, 0, Hud::MaxRects);
+            for (auto i = 0; i < hud.rectCount; ++i) {
+                auto& rect = hud.rects[i];
+                serialize_int(stream, rect.kind, Hud::PANEL, Hud::NIB);
+                serialize_float(stream, rect.left); serialize_float(stream, rect.top);
+                serialize_float(stream, rect.right); serialize_float(stream, rect.bottom);
+            }
             serialize_int(stream, tableModel, 0, 19999);
             serialize_vector(stream, tablePos); serialize_vector(stream, tableRight);
             serialize_vector(stream, tableUp); serialize_vector(stream, tableAt);

@@ -128,6 +128,11 @@ bool CConfigManager::GetConfigHostLeaveAbort()
 	return ms_pReader->GetBoolean("", "host-leave-abort", ms_umDefaultConfig.at("host-leave-abort") != 0);
 }
 
+bool CConfigManager::GetConfigMissionCarAuthorityReturn()
+{
+	return ms_pReader->GetBoolean("", "mission-car-authority-return", ms_umDefaultConfig.at("mission-car-authority-return") != 0);
+}
+
 uint32_t CConfigManager::GetConfigAutosaveMinutes()
 {
 	return (uint32_t)std::min<unsigned long>(ms_pReader->GetUnsigned("", "autosave-minutes", 10), 1440);

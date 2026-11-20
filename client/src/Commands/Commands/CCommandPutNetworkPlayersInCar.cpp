@@ -98,8 +98,11 @@ static bool ReserveMissionPassengers(CVehicle* pVehicle, bool (&reservedSeats)[M
 					found = true;
 					if (task->GetTaskType() == TASK_COMPLEX_ENTER_CAR_AS_DRIVER)
 						continue;
-					const int seat = CCarEnterExit::ComputePassengerIndexFromCarDoor(pVehicle,
-						enter->m_nTargetSeat ? enter->m_nTargetSeat : enter->m_nTargetDoor);
+					// a resolved door is the reliable one; otherwise the seat the task asks for. Index 0 is a real seat,
+					// not "unset": the old ternary passed seat 0 as door 0 and reserved every seat
+					const int seat = enter->m_nTargetDoor
+						? CCarEnterExit::ComputePassengerIndexFromCarDoor(pVehicle, enter->m_nTargetDoor)
+						: (int)enter->m_nTargetSeat;
 					if (seat >= 0 && seat < MAX_PASSENGER_SEATS)
 						reservedSeats[seat] = true;
 					else
@@ -146,7 +149,7 @@ void CCommandPutNetworkPlayersInCar::Process(CRunningScript* script)
 	PutPlayersInCar(vehicle);
 }
 
-void CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bMissionBoarding)
+int CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bMissionBoarding, playerid_t skip)
 {
 	CNetworkVehicle* pNetworkVehicle = pVehicle ? CNetworkVehicleManager::GetVehicle(pVehicle) : nullptr;
 
@@ -154,7 +157,7 @@ void CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bM
 	if (!pVehicle || pVehicle->m_fHealth <= 0.0f || !pNetworkVehicle)
 	{
 		if (bMissionBoarding)
-			return;
+			return 0;
 		CNetworkPlayer* networkPlayers[FALLBACK_MAX_PLAYERS];
 		int playerCount = 0;
 		for (auto networkPlayer : CNetworkPlayerManager::m_pPlayers)
@@ -163,7 +166,7 @@ void CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bM
 				networkPlayers[playerCount++] = networkPlayer;
 		}
 		CCommandTeleportPlayersToHostSafely::TeleportToHost(networkPlayers, playerCount);
-		return;
+		return 0;
 	}
 
 	const vehicleid_t vehicleid = pNetworkVehicle->m_vehicleId;
@@ -175,14 +178,25 @@ void CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bM
 	bool reservedSeats[MAX_PASSENGER_SEATS] = {};
 	std::vector<CVector> createdCarPositions;
 	std::vector<playerid_t> leftover;
-	int seats = 0, copies = 0, farPlayers = 0;
+	int seats = 0, copies = 0, farPlayers = 0, sent = 0;
 	const bool ninesFarBoarding = bMissionBoarding && CConfigLoader::ms_bMissionNinesFarBoarding &&
 		CMissionMirror::GetRunningMissionId() == 16;
 	// Nines and AK's, end of the practice: the guests come to the host's car and get in with the normal entry animation
 	// (mission-nines-board-near), even with mission-no-auto-board and from far away
 	const bool ninesBoardNear = ninesFarBoarding && CConfigLoader::ms_bMissionNinesBoardNear;
+	// INTRO1 (Big Smoke's house, 2026-11-19): the script gives the host the enter-car task and fades to the cemetery about
+	// 3 s later, so a guest never has time to board by hand and mission-no-auto-board would leave the seat empty. With
+	// intro-board the seats go out with the normal walk animation instead of being only reserved. Scoped to mission 11
+	// and the Perennial (404) so no other mission changes: a guest still never takes a seat reserved for a mission NPC.
+	const bool introBoard = bMissionBoarding && CConfigLoader::ms_bIntroBoard && model == 404 &&
+		CMissionMirror::GetRunningMissionId() == 11;
 	if (bMissionBoarding)
 		ReserveMissionPassengers(pVehicle, reservedSeats);
+	// INTRO1: the script puts Big Smoke in the front passenger seat before the guests are sent (intro1.sc:327, seat 0),
+	// and his task in that same frame does not say which seat yet (the opcode installs the timed entry): keep seat 0 for
+	// him so a guest can never take it and leave him out of the car (the script waits for him with no timeout).
+	if (introBoard)
+		reservedSeats[0] = true;
 
 	// Allocate seats to nearby players before deciding which distant players need copies.
 	auto networkPlayers = CNetworkPlayerManager::m_pPlayers;
@@ -192,6 +206,8 @@ void CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bM
 		});
 	for (auto networkPlayer : networkPlayers)
 	{
+		if (skip.valid() && networkPlayer->m_playerId == skip)
+			continue;
 		if (!networkPlayer->m_pPed || !CCoopMission::ShouldIncludeNetworkPlayer(networkPlayer))
 			continue;
 
@@ -222,12 +238,12 @@ void CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bM
 		if (distant)
 		{
 			farPlayers++;
-			if (seat >= 0 && !ninesFarBoarding)
+			if (seat >= 0 && !ninesFarBoarding && !introBoard)
 				continue;
 		}
 
 		// mission-no-auto-board: the seat stays free, the guest gets in by himself
-		if (seat >= 0 && bMissionBoarding && CConfigLoader::ms_bMissionNoAutoBoard && !ninesBoardNear)
+		if (seat >= 0 && bMissionBoarding && CConfigLoader::ms_bMissionNoAutoBoard && !ninesBoardNear && !introBoard)
 		{
 			reservedSeats[seat] = true;
 			seats++;
@@ -237,7 +253,7 @@ void CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bM
 		{
 			reservedSeats[seat] = true;
 			packet.seat = (int8_t)seat;
-			packet.walk = bMissionBoarding && (!distant || ninesBoardNear);
+			packet.walk = bMissionBoarding && (!distant || ninesBoardNear || introBoard);
 			packet.pos = pVehicle->GetPosition();
 			seats++;
 		}
@@ -256,6 +272,7 @@ void CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bM
 		}
 
 		GetPacketFactory().Send(packet);
+		++sent;
 	}
 	if (bMissionBoarding)
 		CMissionMirror::LogEventf("rule-boarding vehicle=%d walk=%d copies=%d far=%d left=%d", model, seats, copies, farPlayers,
@@ -266,12 +283,15 @@ void CCommandPutNetworkPlayersInCar::PutPlayersInCar(CVehicle* pVehicle, bool bM
 		if (script->m_bIsMission && COpCodeSync::IsScriptSynced(script))
 			mission = script;
 	if (!leftover.empty() && CConfigLoader::ms_bMissionBoardingSharedCar && mission && !HasParkedCopies() &&
-		!(CConfigLoader::ms_bMissionNoAutoBoard && MissionGuestCarMade()))
+		!(CConfigLoader::ms_bMissionNoAutoBoard && MissionGuestCarMade()) &&
+		// no car out of nowhere mid-mission (user, 17.11): guests without a seat stay on foot
+		!CConfigLoader::ms_bMissionNoMidCar)
 	{
 		s_pOnlyGuests = &leftover;
 		ParkSharedGuestCar(pVehicle, mission, "boarding", 1);
 		s_pOnlyGuests = nullptr;
 	}
+	return sent;
 }
 
 // a free spot on the ground beside the vehicle, at its level: 1.4 m to the right, to the left, 2.8 m to the right...

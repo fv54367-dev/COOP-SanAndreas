@@ -44,6 +44,15 @@ static void __fastcall CTaskComplexEnterCarAsDriver__Ctor_Hook(
     plugin::CallMethod<0x6402F0, CTaskComplexEnterCarAsDriver*, CVehicle*>(This, vehicle);
 }
 
+// when the last CTaskComplexLeaveCar hook sent its VehicleExit (a normal exit takes up to a few seconds to
+// actually leave the car; a scripted one that fast must not be mistaken for it)
+static DWORD s_dwLeaveTaskExitAt = 0;
+
+bool TaskHooks::LeaveTaskExitRecent()
+{
+    return s_dwLeaveTaskExitAt && GetTickCount() - s_dwLeaveTaskExitAt < 4000;
+}
+
 static void __fastcall CTaskComplexLeaveCar__Ctor_Hook(CTaskComplexLeaveCar* This, SKIP_EDX, CVehicle* vehicle,
     int targetDoor, int delayTime, bool sensibleLeaveCar, bool forceGetOut)
 {
@@ -51,6 +60,7 @@ static void __fastcall CTaskComplexLeaveCar__Ctor_Hook(CTaskComplexLeaveCar* Thi
     {
         Packets::Vehicles::VehicleExit packet{};
         GetPacketFactory().Send(packet);
+        s_dwLeaveTaskExitAt = GetTickCount();
     }
 
     plugin::CallMethod<0x63B8C0, CTaskComplexLeaveCar*, CVehicle*, int, int, bool, bool>(

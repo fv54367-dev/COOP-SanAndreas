@@ -889,20 +889,37 @@ bool ScenarioF(const char* host, uint16_t port)
     ok &= Expect(!a.LastPool(P::INPUT), "(f) INPUT de espectador rechazado");
     p.session = 550; b.Send(p); pump();
     ok &= Expect(!a.LastPool(P::INPUT), "(f) INPUT de sesion vieja rechazado");
+    b.SendOnFoot(90, 0, GROUND_Z); d.SendOnFoot(100, 0, GROUND_Z); pump();
     p.session = 551; state(b, a, p);
     ok &= Expect(a.LastPool(P::INPUT) && a.LastPool(P::INPUT)->session == 551 &&
         a.LastPool(P::INPUT)->sequence == 1 && a.LastPool(P::INPUT)->sender == b.Id() &&
         a.LastPool(P::INPUT)->mouseX == 4 && a.LastPool(P::INPUT)->keys[16] == 255,
-        "(f) INPUT del segundo conserva mouse y teclas");
+        "(f) INPUT del segundo conserva mouse y teclas aunque su posicion replicada salga del radio");
     p.sequence = 2; p.mouseX = 0; p.keys[16] = 0; p.keys[15] = 255; b.Send(p);
     p.sequence = 3; p.keys[15] = 0; p.keys[14] = 255; state(b, a, p);
     ok &= Expect(a.LastPool(P::INPUT) && a.LastPool(P::INPUT)->sequence == 3 && a.LastPool(P::INPUT)->keys[14] == 255,
         "(f) inputs consecutivos conservan el ultimo boton");
     p.action = P::VIEW; p.count = 75;
+    p.turn = 1; p.hiddenShooter = true;
+    p.hud.help = 9; p.hud.textCount = P::Hud::MaxText; p.hud.rectCount = P::Hud::MaxRects;
+    auto& hudText = p.hud.texts[P::Hud::MaxText - 1];
+    hudText.key = 19; hudText.number = 9; hudText.x = 36.0f; hudText.y = 360.0f;
+    hudText.scaleX = 0.54f; hudText.scaleY = 1.44f; hudText.color = 0xFFB4B4B4;
+    p.hud.rects[2].kind = P::Hud::NIB; p.hud.rects[2].left = 0.75f;
     for (int i = 0; i < 75; ++i) { p.objects[i].slot = i; p.objects[i].model = 3003; }
     state(a, b, p);
     ok &= Expect(b.LastPool(P::VIEW) && b.LastPool(P::VIEW)->count == 75 && b.LastPool(P::VIEW)->objects[74].model == 3003,
-        "(f) snapshot maximo cabe en paquete y se deserializa completo");
+        "(f) el segundo recibe el snapshot completo aunque su posicion replicada salga del radio");
+    const auto* guestView = b.LastPool(P::VIEW);
+    ok &= Expect(guestView && guestView->turn == 1 && guestView->hiddenShooter && guestView->hud.help == 9 &&
+        guestView->hud.textCount == P::Hud::MaxText && guestView->hud.texts[P::Hud::MaxText - 1].number == 9 &&
+        guestView->hud.texts[P::Hud::MaxText - 1].color == 0xFFB4B4B4 &&
+        guestView->hud.rectCount == P::Hud::MaxRects && guestView->hud.rects[2].kind == P::Hud::NIB &&
+        guestView->hud.rects[2].left == 0.75f,
+        "(f) el invitado recibe ayuda, numero de bola y marcas del HUD nativo");
+    state(a, c, p);
+    ok &= Expect(c.LastPool(P::VIEW) && !d.LastPool(P::VIEW),
+        "(f) solo los espectadores cercanos reciben la vista");
     p.action = P::RESULT; p.turn = 1; c.Send(p); pump();
     ok &= Expect(!b.LastPool(P::RESULT), "(f) resultado de espectador rechazado");
     a.Send(p); pump();

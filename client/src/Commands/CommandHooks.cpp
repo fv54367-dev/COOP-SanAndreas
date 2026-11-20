@@ -19,6 +19,7 @@ int ProcessCustomCommand()
     if (CMissionSceneWait::ShouldHold(pScript, nCommand & 0x7FFF))
         return 2;
     commandIP = pScript->m_pCurrentIP;
+    CMissionSceneWait::OnCommandStart(pScript, nCommand & 0x7FFF);
     CHomeInvasion::OnCommandStart(pScript, nCommand & 0x7FFF);
     CMissionGuestActions::OnCommandStart(pScript, nCommand & 0x7FFF);
     CMissionGuestCounts::OnCommandStart(pScript, nCommand & 0x7FFF);

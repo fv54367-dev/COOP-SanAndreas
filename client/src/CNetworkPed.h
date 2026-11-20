@@ -150,6 +150,10 @@ public:
 	void ReleaseMirrorAnimBlocks();
 
 	static CNetworkPed* CreateHosted(CPed* ped);
+	// interior-service-guest: the named pose of a ped (block/hash/flags/time/speed), false when none
+	static bool GetNamedPose(CPed* ped, char block[16], uint32_t& hash, uint16_t& flags, float& time, float& speed);
+
+
 	void WarpIntoVehicleDriver(CVehicle* vehicle);
 	void WarpIntoVehiclePassenger(CVehicle* vehicle, int seatid);
 	// bWarpOut false: use the game's own exit animation (a player pulled it out) instead of the raw warp

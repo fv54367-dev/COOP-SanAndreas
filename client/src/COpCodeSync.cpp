@@ -41,6 +41,7 @@
 #include "CMissionMode.h"
 #include "CMissionSyncRules.h"
 #include "COpCodeSync.h"
+#include "CInteriorObjectSync.h"
 #include "CCutsceneKeepSeat.h"
 #include <CUserDisplay.h>
 #include <Commands/CCustomCommandMgr.h>
@@ -1706,6 +1707,7 @@ void COpCodeSync::HandlePacket(const uint8_t* buffer, int bufferSize)
 
 static void PoolBeforeCommand()
 {
+    CInteriorObjectSync::ObserveNativeOpcode(lastProcessedScript, static_cast<uint16_t>(lastOpCodeProcessed) & 0x7FFF);
     CActivityChallenge::BeforeCommand(lastProcessedScript, static_cast<uint16_t>(lastOpCodeProcessed) & 0x7FFF);
     CCoopPool::BeforeCommand(lastProcessedScript, static_cast<uint16_t>(lastOpCodeProcessed));
 }

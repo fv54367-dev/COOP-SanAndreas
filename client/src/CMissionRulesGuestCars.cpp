@@ -715,6 +715,30 @@ void ProcessMissionBoarding(bool& bTeleportPending)
     const bool eligible = CConfigLoader::ms_bMissionScriptedBoarding && CMissionSyncRules::IsEnabled() &&
         CNetwork::m_bConnected && !COpCodeSync::bProcessingNetworkOpcode && CCoopMission::IsScriptAuthority() &&
         !CMirrorBlips::IsPerPlayerMissionRunning() && IsStoryMissionRunning() && player && player->m_fHealth > 0.0f;
+    // INTRO1 (Big Smoke's house, 2026-11-19): the script hands the host the enter-car task and fades to the cemetery about
+    // 3 s later, so waiting for the host to be seated (and 3 s more for Big Smoke to finish entering) can never work: the
+    // guest ended up standing beside the Perennial. With intro-board the boarding goes out as soon as the mission's car is
+    // at the script's boarding spot and the host is still on foot, so the guests walk in almost at the same time as CJ.
+    static int introVehicleRef = -1;
+    const int runningMission = CMissionMirror::GetRunningMissionId();
+    if (runningMission != 11)
+        introVehicleRef = -1;  // the latch is per mission, so a retry boards again
+    if (eligible && CConfigLoader::ms_bIntroBoard && runningMission == 11 && !player->m_nPedFlags.bInVehicle)
+    {
+        // Only the car parked at the boarding spot: the script brings the same Perennial back beside CJ on foot at the
+        // cemetery (intro1.sc:574-583) and blows it up in the cutscene (:780), so "the nearest 404" would board a guest
+        // into that one. And the latch is only taken when something was actually sent.
+        static const CVector boardingSpot{2494.91f, -1682.17f, 12.32f};
+        CVehicle* introCar = FindMissionVehicle(404, boardingSpot, 40.0f);
+        if (introCar != nullptr && introVehicleRef != CPools::GetVehicleRef(introCar) &&
+            CCommandPutNetworkPlayersInCar::PutPlayersInCar(introCar, true, CNetworkPlayerManager::m_localPlayerId) > 0)
+        {
+            introVehicleRef = CPools::GetVehicleRef(introCar);
+            CMissionMirror::LogEventf("rule-intro-board vehicle=%d at=%.1f,%.1f,%.1f", introCar->m_nModelIndex,
+                introCar->GetPosition().x, introCar->GetPosition().y, introCar->GetPosition().z);
+        }
+        return;
+    }
     if (!eligible || !player->m_nPedFlags.bInVehicle || !player->m_pVehicle)
     {
         vehicleRef = -1;

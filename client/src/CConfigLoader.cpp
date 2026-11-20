@@ -117,6 +117,9 @@ void CConfigLoader::Load()
     ms_bNpcSyncedPoseKeep = readBool("npc-synced-pose-keep");
     ms_bInteriorHandover = readBool("interior-handover");
     ms_bInteriorPopulationSync = readBool("interior-population-sync");
+    ms_bInteriorAreaFallback = readBool("interior-area-fallback");
+    ms_bInteriorObjectSync = readBool("interior-object-sync");
+    ms_bInteriorServiceGuest = readBool("interior-service-guest");
     ms_bMissionInteriorSafety = readBool("mission-interior-safety");
     ms_bHandover = readBool("handover");
     ms_bZonePopulation = readBool("zone-population");
@@ -197,7 +200,9 @@ void CConfigLoader::Load()
     GetPrivateProfileString(CONFIG_SECTION.c_str(), "voice-mic-device", "", ms_szVoiceMic, sizeof(ms_szVoiceMic), ms_sDataPath.c_str());
     ms_bTrainSync = readBool("train-sync");
     ms_bTrainSyncRail = readBool("train-sync-rail");
+    ms_bTrainSyncKeep = readBool("train-sync-keep");
     ms_bMissionSyncRules = readBool("mission-sync-rules");
+    ms_bIntroBoard = readBool("intro-board");
     ms_bIntroIndependent = readBool("intro-independent");
     ms_bNativeHints = readBool("native-hints");
     ms_bMissionWaitNotices = readBool("mission-wait-notices");
@@ -214,10 +219,12 @@ void CConfigLoader::Load()
     ms_bMissionEntryNoTeleport = readBool("mission-entry-no-teleport");
     ms_bMissionNoAutoBoard = readBool("mission-no-auto-board");
     ms_bMissionSceneSkipNoControl = readBool("mission-scene-skip-no-control");
+    ms_bMissionHoldKeepTags = readBool("mission-hold-keep-tags");
     ms_bCutsceneTableFallback = readBool("cutscene-table-fallback");
     ms_bIntroFollowHost = readBool("intro-follow-host");
     ms_bMirrorBlipsClearOnEnd = readBool("mirror-blips-clear-on-end");
     ms_bMissionCarOverlapDedupe = readBool("mission-car-overlap-dedupe");
+    ms_bPhoneCallKeepsOnMission = readBool("phone-call-keeps-onmission");
     ms_bSceneGuestEndNearHost = readBool("scene-guest-end-near-host");
     ms_bMissionGuestTrain = readBool("mission-guest-train");
     ms_bMissionShopOneAtATime = readBool("mission-shop-one-at-a-time");
@@ -276,6 +283,7 @@ void CConfigLoader::Load()
     ms_bVehicleDamageAnyPlayer = readBool("vehicle-damage-any-player");
     ms_bCoopCarGunners = readBool("coop-car-gunners");
     ms_bMissionBoardingSharedCar = readBool("mission-boarding-shared-car");
+    ms_bMissionNoMidCar = readBool("mission-no-midcar");
     ms_bMissionWaitPauseTimer = readBool("mission-wait-pause-timer");
     ms_bCoopOgLocSpeed = readBool("coop-og-loc-speed");
     ms_bVsRaceBoard = readBool("vs-race-board");
@@ -385,6 +393,12 @@ void CConfigLoader::Save()
         ms_bNpcSyncedPoseKeep ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "interior-population-sync",
         ms_bInteriorPopulationSync ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "interior-area-fallback",
+        ms_bInteriorAreaFallback ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "interior-object-sync",
+        ms_bInteriorObjectSync ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "interior-service-guest",
+        ms_bInteriorServiceGuest ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "interior-handover",
         ms_bInteriorHandover ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-interior-safety",
@@ -473,6 +487,8 @@ void CConfigLoader::Save()
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "mission-sync-rules", ms_bMissionSyncRules ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "intro-board", ms_bIntroBoard ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "intro-independent", ms_bIntroIndependent ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "native-hints", ms_bNativeHints ? "true" : "false", ms_sDataPath.c_str());
@@ -496,6 +512,8 @@ void CConfigLoader::Save()
         ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-scene-skip-no-control", ms_bMissionSceneSkipNoControl ? "true" : "false",
         ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-hold-keep-tags", ms_bMissionHoldKeepTags ? "true" : "false",
+        ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "cutscene-table-fallback", ms_bCutsceneTableFallback ? "true" : "false",
         ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "intro-follow-host", ms_bIntroFollowHost ? "true" : "false",
@@ -503,6 +521,8 @@ void CConfigLoader::Save()
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mirror-blips-clear-on-end", ms_bMirrorBlipsClearOnEnd ? "true" : "false",
         ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-car-overlap-dedupe", ms_bMissionCarOverlapDedupe ? "true" : "false",
+        ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "phone-call-keeps-onmission", ms_bPhoneCallKeepsOnMission ? "true" : "false",
         ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "scene-guest-end-near-host", ms_bSceneGuestEndNearHost ? "true" : "false",
         ms_sDataPath.c_str());
@@ -597,6 +617,7 @@ void CConfigLoader::Save()
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "vehicle-damage-any-player", ms_bVehicleDamageAnyPlayer ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "coop-car-gunners", ms_bCoopCarGunners ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-boarding-shared-car", ms_bMissionBoardingSharedCar ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-no-midcar", ms_bMissionNoMidCar ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-wait-pause-timer", ms_bMissionWaitPauseTimer ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "coop-og-loc-speed", ms_bCoopOgLocSpeed ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "vs-race-board", ms_bVsRaceBoard ? "true" : "false", ms_sDataPath.c_str());
@@ -714,6 +735,8 @@ void CConfigLoader::Save()
         CONFIG_SECTION.c_str(), "train-sync", ms_bTrainSync ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "train-sync-rail", ms_bTrainSyncRail ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(
+        CONFIG_SECTION.c_str(), "train-sync-keep", ms_bTrainSyncKeep ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "voice-chat", ms_bVoiceChat ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
