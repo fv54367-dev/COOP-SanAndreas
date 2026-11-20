@@ -17,6 +17,103 @@ pub const UNKNOWN: usize = 3;
 // channel to install (without "canal-") and the text shown next to the button
 pub static LAST: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
 
+// a published channel (one GitHub release of the public repo): what the CHANNEL screen lists
+#[derive(Clone)]
+pub struct Channel {
+    pub canal: String, // main
+    pub label: String, // main-4cdbe8d
+    pub title: String, // Principal
+    pub date: String,  // 2026-11-20
+}
+
+// channels of the last listing, newest first
+pub static CHANNELS: Mutex<Vec<Channel>> = Mutex::new(Vec::new());
+
+// the channel the player pinned, next to gta_sa.exe: it wins over the prefix of CoopAndreas_version.txt
+pub fn pinned(dir: &str) -> Option<String> {
+    let text = std::fs::read_to_string(format!("{}\\CoopAndreas_canal.txt", dir)).ok()?;
+    let canal = text.trim().trim_start_matches("canal-").to_string();
+    if canal.is_empty() || !canal.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '/' || c == '.') {
+        return None;
+    }
+    Some(canal)
+}
+
+// an empty canal deletes the file: follow the installed channel again
+pub fn pin(dir: &str, canal: &str) {
+    let path = format!("{}\\CoopAndreas_canal.txt", dir);
+    if canal.trim().is_empty() {
+        let _ = std::fs::remove_file(path);
+    } else {
+        let _ = std::fs::write(path, format!("{}", canal.trim().trim_start_matches("canal-")));
+    }
+}
+
+// "Principal [main-4cdbe8d]" -> "Principal": the label goes on its own on screen
+pub fn title_without_label(title: &str) -> &str {
+    match title.rfind('[') {
+        Some(i) => title[..i].trim_end(),
+        None => title,
+    }
+}
+
+// every release tagged canal-*: title, label and date (the tests pin the parser)
+fn parse_channels(json: &str) -> Vec<Channel> {
+    let mut list = Vec::new();
+    let mut pos = 0;
+    while let Some((tag, after)) = json_str(json, "tag_name", pos) {
+        let (title, next) = json_str(json, "name", after).unwrap_or((String::new(), after));
+        // updated_at is the last upload of the package: a channel tag keeps its first publish date forever
+        let (stamp, end) = json_str(json, "updated_at", next)
+            .or_else(|| json_str(json, "published_at", next))
+            .unwrap_or((String::new(), next));
+        pos = end.max(after);
+        let Some(canal) = tag.strip_prefix("canal-").map(|c| c.to_string()) else { continue };
+        if canal.is_empty() {
+            continue;
+        }
+        list.push(Channel {
+            label: label_of(&title).unwrap_or_default(),
+            title,
+            date: stamp.get(..10).unwrap_or("").to_string(),
+            canal,
+        });
+    }
+    list
+}
+
+// every release tagged canal-*: tag, title, label and date
+pub fn fetch_channels() -> Vec<Channel> {
+    let out = Command::new("curl.exe")
+        .args(["-fsSL", "--max-time", "15", "-H", "Accept: application/vnd.github+json"])
+        .arg(format!("https://api.github.com/repos/{}/releases?per_page=100", REPO))
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    let json = match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+        _ => return Vec::new(),
+    };
+    parse_channels(&json)
+}
+
+// lists the channels off the UI thread and posts `msg` when the list is in CHANNELS
+pub fn start_list(hwnd: crate::win32::HWND, msg: u32) {
+    std::thread::spawn(move || {
+        let list = fetch_channels();
+        if let Ok(mut channels) = CHANNELS.lock() {
+            *channels = list;
+        }
+        unsafe {
+            crate::win32::PostMessageW(hwnd, msg, 0, 0);
+        }
+    });
+}
+
+// the label of the build installed next to gta_sa.exe (what CoopAndreas_version.txt says)
+pub fn installed_label() -> String {
+    first_line(&format!("{}\\CoopAndreas_version.txt", crate::launch::game_dir())).unwrap_or_default()
+}
+
 fn first_line(path: &str) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     let line = text.lines().next()?.trim().trim_start_matches('\u{feff}').to_string();
@@ -79,15 +176,19 @@ fn check(dir: &str) -> (usize, String, String) {
     };
     let list = releases(&json);
 
-    // stay on the installed channel (main-, todo-, prN-); anything else follows main
+    // stay on the pinned channel; else on the installed one (main-, todo-, prN-); anything else follows main
     let prefix = installed.split('-').next().unwrap_or("").to_string();
-    let wanted = match prefix.as_str() {
-        "todo" => list.iter().find(|(tag, _)| tag == "canal-todo"),
-        p if p.starts_with("pr") => {
-            let head = format!("PR {}:", &p[2..]);
-            list.iter().find(|(tag, name)| tag.starts_with("canal-") && name.starts_with(&head))
-        }
-        _ => None,
+    let pinned = pinned(dir);
+    let wanted = match pinned {
+        Some(canal) => list.iter().find(|(tag, _)| *tag == format!("canal-{}", canal)),
+        None => match prefix.as_str() {
+            "todo" => list.iter().find(|(tag, _)| tag == "canal-todo"),
+            p if p.starts_with("pr") => {
+                let head = format!("PR {}:", &p[2..]);
+                list.iter().find(|(tag, name)| tag.starts_with("canal-") && name.starts_with(&head))
+            }
+            _ => None,
+        },
     };
     let release = match wanted.or_else(|| list.iter().find(|(tag, _)| tag == "canal-main")) {
         Some(r) => r,
@@ -395,6 +496,9 @@ fn install(dir: &str, canal: &str, progress: &dyn Fn(&str)) -> Result<String, St
 // (the text of each one is in LAST)
 pub fn start_install(hwnd: crate::win32::HWND, msg: u32, canal: String) {
     let dir = crate::launch::game_dir();
+    if let Ok(mut last) = LAST.lock() {
+        last.0 = canal.clone();
+    }
     std::thread::spawn(move || {
         let post = |state: usize, text: &str| {
             if let Ok(mut last) = LAST.lock() {
@@ -439,6 +543,39 @@ pub fn remove_old() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn channels_parse() {
+        let json = r#"[
+          {"tag_name":"canal-main","target_commitish":"main","name":"Principal [main-4cdbe8d]","draft":false,"prerelease":true,"created_at":"2026-11-16T04:31:26Z","updated_at":"2026-11-20T09:59:02Z","published_at":"2026-11-16T05:02:17Z"},
+          {"tag_name":"canal-tanda/2026-11-20-catalyst","name":"Tanda [tanda-abc1234]","published_at":"2026-11-19T10:00:00Z"},
+          {"tag_name":"pre-prueba","name":"Viejo","published_at":"2026-11-10T10:00:00Z"}
+        ]"#;
+        let list = super::parse_channels(json);
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].canal, "main");
+        assert_eq!(list[0].label, "main-4cdbe8d");
+        assert_eq!(list[0].title, "Principal [main-4cdbe8d]");
+        // the last upload of the package, not the first publish of a tag that keeps being rewritten
+        assert_eq!(list[0].date, "2026-11-20");
+        assert_eq!(super::title_without_label(&list[0].title), "Principal");
+        assert_eq!(list[1].canal, "tanda/2026-11-20-catalyst");
+        assert_eq!(list[1].label, "tanda-abc1234");
+        assert_eq!(list[1].date, "2026-11-19");
+    }
+
+    #[test]
+    fn pin_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("coopsa-pin-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let d = dir.to_string_lossy().to_string();
+        assert_eq!(super::pinned(&d), None);
+        super::pin(&d, "canal-main");
+        assert_eq!(super::pinned(&d).as_deref(), Some("main"));
+        super::pin(&d, "");
+        assert_eq!(super::pinned(&d), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn sha256() {
         assert_eq!(super::sha256_hex(b""), "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855");

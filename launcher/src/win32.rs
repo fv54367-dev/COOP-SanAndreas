@@ -162,6 +162,7 @@ pub const IDC_ARROW: usize = 32512;
 pub const IDC_HAND: usize = 32649;
 pub const VK_RETURN: u32 = 0x0D;
 pub const VK_SPACE: u32 = 0x20;
+pub const VK_ESCAPE: u32 = 0x1B;
 pub const MB_OK: u32 = 0x0;
 pub const MB_ICONERROR: u32 = 0x10;
 pub const MB_YESNO: u32 = 0x4;

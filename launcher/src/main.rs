@@ -4,7 +4,8 @@
 // gta_sa.exe --coop -connect <server> -nick <name> from its own folder and exits (no resident process).
 // After the checks JUGAR shows the saves screen (saves.rs, like the game's own): NUEVA PARTIDA or a slot starts the game
 // straight into it (-autoload), the cross deletes a slot. "ABRIR SERVIDOR" opens SERVIDOR\server.exe for the host; the
-// small top-right button is the update check (update.rs).
+// small top-right button is the update check (update.rs); the VER square next to it lists every published channel
+// (main, branches, PRs) so each player can pick a version, pin it in CoopAndreas_canal.txt and install it from there.
 #![windows_subsystem = "windows"]
 
 mod launch;
@@ -39,6 +40,8 @@ const WM_UPDATE_STATE: u32 = WM_APP + 1;
 const WM_SERVER_STATE: u32 = WM_APP + 2;
 // posted by the network search of the SERVIDORES screen (the result is in FOUND)
 const WM_SERVERS_FOUND: u32 = WM_APP + 3;
+// posted by update::start_list when the published channels are in update::CHANNELS
+const WM_CHANNELS: u32 = WM_APP + 4;
 const UPDATE_TIMER: usize = 1;
 const STATUS_TIMER: usize = 2;
 
@@ -63,6 +66,8 @@ const PART_UPDATE: u8 = 3;
 const PART_NEW: u8 = 4;
 const PART_BACK: u8 = 5;
 const PART_FOLDER: u8 = 8; // top-left square: where the saves are
+// the channels screen (versions published in the public repo): the square left of the update one
+const PART_CHANNEL: u8 = 9;
 const PART_SLOT: u8 = 10; // + slot (0..7)
 const PART_DELETE: u8 = 20; // + slot (0..7)
 // the servers screen (top-left square of the main one): search again, back, a row per server found
@@ -111,6 +116,10 @@ struct App {
     servers: Vec<server::Found>,
     scanning: bool,
     last_scan: u32,
+    // the channels screen: the versions published in the public repo (newest first) and whether the list is on its way
+    channels_view: bool,
+    channels: Vec<update::Channel>,
+    listing: bool,
 }
 
 unsafe fn make_font(pt: i32, dpi: i32, bold: bool) -> HFONT {
@@ -180,6 +189,9 @@ impl App {
             servers: Vec::new(),
             scanning: false,
             last_scan: 0,
+            channels_view: false,
+            channels: Vec::new(),
+            listing: false,
         })
     }
 
@@ -200,13 +212,18 @@ impl App {
 
     // the clickable parts of the screen on view
     fn parts(&self) -> Vec<u8> {
+        if self.channels_view {
+            let mut parts = vec![PART_RESCAN, PART_BACK];
+            parts.extend((0..self.channels.len().min(MAX_ROWS)).map(|i| PART_ROW + i as u8));
+            return parts;
+        }
         if self.servers_view {
             let mut parts = vec![PART_RESCAN, PART_BACK];
             parts.extend((0..self.servers.len().min(MAX_ROWS)).map(|i| PART_ROW + i as u8));
             return parts;
         }
         if !self.saves_view {
-            return vec![PART_PLAY, PART_SERVER, PART_UPDATE, PART_LIST];
+            return vec![PART_PLAY, PART_SERVER, PART_UPDATE, PART_LIST, PART_CHANNEL];
         }
         let mut parts = vec![PART_NEW, PART_BACK, PART_FOLDER];
         for (i, slot) in self.slots.iter().enumerate() {
@@ -238,6 +255,9 @@ impl App {
                 let top = row(p - PART_SLOT);
                 rect(self.px(48), top, cr.right - self.px(48 + 32), top + self.px(26))
             }
+            // small square left of the update one, top-right corner
+            PART_CHANNEL => rect(cr.right - self.px(12 + 34 + 8 + 34), self.px(12), cr.right - self.px(12 + 34 + 8),
+                self.px(12 + 34)),
             // small square in the top-right corner
             _ => rect(cr.right - self.px(12 + 34), self.px(12), cr.right - self.px(12), self.px(12 + 34)),
         }
@@ -547,6 +567,120 @@ unsafe fn pick_server(hwnd: HWND, row: usize) {
     try_launch(hwnd);
 }
 
+// switches between the fields and the channels screen; entering it lists the published versions
+unsafe fn show_channels(hwnd: HWND, app: &mut App, on: bool) {
+    app.channels_view = on;
+    app.hover = PART_NONE;
+    for edit in app.edits {
+        ShowWindow(edit, if on { SW_HIDE } else { SW_SHOW });
+    }
+    if on {
+        start_channel_list(hwnd);
+    } else {
+        SetFocus(app.edits[0]);
+    }
+    InvalidateRect(hwnd, std::ptr::null(), FALSE);
+}
+
+unsafe fn start_channel_list(hwnd: HWND) {
+    let app = app_ptr(hwnd);
+    if app.is_null() || (*app).listing {
+        return;
+    }
+    (*app).listing = true;
+    InvalidateRect(hwnd, std::ptr::null(), FALSE);
+    update::start_list(hwnd, WM_CHANNELS);
+}
+
+// a channel row: it becomes the pinned one and is installed right away
+unsafe fn pick_channel(hwnd: HWND, row: usize) {
+    let app = app_ptr(hwnd);
+    if app.is_null() || (*app).launching || (*app).upd_state == update::CHECKING {
+        return;
+    }
+    let app = &mut *app;
+    let Some(channel) = app.channels.get(row).cloned() else { return };
+    update::pin(&launch::game_dir(), &channel.canal);
+    app.launching = true;
+    app.upd_state = update::INSTALLING;
+    InvalidateRect(hwnd, std::ptr::null(), FALSE);
+    update::start_install(hwnd, WM_UPDATE_STATE, channel.canal);
+}
+
+unsafe fn paint_channels(hdc: HDC, app: &App, cr: &RECT) {
+    SelectObject(hdc, app.hfont_btn as HGDIOBJ);
+    let title = rect(0, app.px(12), cr.right, app.px(44));
+    text_in(hdc, "CANALES (VERSIONES)", &title, COL_TEXT, DT_CENTER | DT_VCENTER);
+
+    let again = app.part_rect(PART_RESCAN, cr);
+    let hot = app.hover == PART_RESCAN || app.pressed == PART_RESCAN;
+    fill_round(hdc, &again, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(12));
+    SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+    let label = if app.listing { "Buscando..." } else { "\u{21bb}  BUSCAR DE NUEVO" };
+    text_in(hdc, label, &again, COL_YELLOW, DT_CENTER | DT_VCENTER);
+
+    let installed = update::installed_label();
+    for (i, channel) in app.channels.iter().take(MAX_ROWS).enumerate() {
+        let part = PART_ROW + i as u8;
+        let row = app.part_rect(part, cr);
+        let hot = app.hover == part || app.pressed == part;
+        let here = !channel.label.is_empty() && channel.label == installed;
+        fill_round(hdc, &row, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(6));
+        let inner = rect(row.left + app.px(10), row.top, row.right - app.px(10), row.bottom);
+        // the right side first, so the name can stop before it
+        SelectObject(hdc, app.hfont_small as HGDIOBJ);
+        let detail = if here {
+            format!("{}  \u{b7}  instalada", channel.date)
+        } else {
+            channel.date.clone()
+        };
+        let mut size = SIZE { cx: 0, cy: 0 };
+        let detail_w = wide(&detail);
+        GetTextExtentPoint32W(hdc, detail_w.as_ptr(), detail_w.len() as i32 - 1, &mut size);
+        text_in(hdc, &detail, &inner, if here { COL_GREEN } else { COL_MUTED }, DT_RIGHT | DT_VCENTER);
+        SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+        let plain = update::title_without_label(&channel.title);
+        let name = match (plain.is_empty(), channel.label.is_empty()) {
+            (false, false) => format!("{}  \u{b7}  {}", plain, channel.label),
+            _ => channel.canal.clone(),
+        };
+        let left = rect(inner.left, inner.top, inner.right - size.cx - app.px(12), inner.bottom);
+        text_in(hdc, &name, &left, COL_TEXT, DT_VCENTER | DT_END_ELLIPSIS);
+    }
+    if app.channels.is_empty() && !app.listing {
+        SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+        let first = rect(app.px(24), app.px(140), cr.right - app.px(24), app.px(164));
+        text_in(hdc, "No se pudo leer la lista de versiones.", &first, COL_MUTED, DT_CENTER | DT_VCENTER);
+        SelectObject(hdc, app.hfont_small as HGDIOBJ);
+        let second = rect(app.px(24), app.px(166), cr.right - app.px(24), app.px(186));
+        text_in(hdc, "Revis\u{e1} la conexi\u{f3}n y toc\u{e1} BUSCAR DE NUEVO.", &second, COL_MUTED, DT_CENTER | DT_VCENTER);
+    }
+
+    let back = app.part_rect(PART_BACK, cr);
+    let hot = app.hover == PART_BACK || app.pressed == PART_BACK;
+    fill_round(hdc, &back, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(10));
+    SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+    text_in(hdc, "\u{2190}  VOLVER", &back, COL_YELLOW, DT_CENTER | DT_VCENTER);
+}
+
+// the square that opens the channels screen: a small list of versions
+unsafe fn paint_channel(hdc: HDC, app: &App, cr: &RECT) {
+    let rc = app.part_rect(PART_CHANNEL, cr);
+    let hot = app.hover == PART_CHANNEL || app.pressed == PART_CHANNEL;
+    fill_round(hdc, &rc, if hot { COL_SQUARE_HOT } else { COL_SQUARE }, app.px(8));
+    SelectObject(hdc, app.hfont_small as HGDIOBJ);
+    text_in(hdc, "VER", &rc, if hot { COL_YELLOW } else { COL_MUTED }, DT_CENTER | DT_VCENTER);
+    if app.hover == PART_CHANNEL {
+        let pinned = update::pinned(&launch::game_dir());
+        let text = match pinned {
+            Some(canal) => format!("Canal: {} (fijado)", canal),
+            None => "Elegir versi\u{f3}n".to_string(),
+        };
+        let hint = rect(0, rc.top, rc.left - app.px(8), rc.bottom);
+        text_in(hdc, &text, &hint, COL_MUTED, DT_RIGHT | DT_VCENTER);
+    }
+}
+
 unsafe fn paint_servers(hdc: HDC, app: &App, cr: &RECT) {
     SelectObject(hdc, app.hfont_btn as HGDIOBJ);
     let title = rect(0, app.px(12), cr.right, app.px(44));
@@ -827,6 +961,16 @@ unsafe fn paint(hwnd: HWND) {
     SetBkMode(hdc, TRANSPARENT);
 
     let old_font = SelectObject(hdc, app.hfont_sub as HGDIOBJ);
+    if app.channels_view {
+        paint_channels(hdc, app, &cr);
+        SelectObject(hdc, app.hfont_small as HGDIOBJ);
+        let footer = rect(app.px(24), cr.bottom - app.px(28), cr.right - app.px(24), cr.bottom - app.px(8));
+        text_in(hdc, "Toc\u{e1} una para instalarla", &footer, COL_MUTED, 0);
+        text_in(hdc, VERSION, &footer, COL_MUTED, DT_RIGHT);
+        SelectObject(hdc, old_font);
+        EndPaint(hwnd, &ps);
+        return;
+    }
     if app.servers_view {
         paint_servers(hdc, app, &cr);
         SelectObject(hdc, app.hfont_small as HGDIOBJ);
@@ -917,6 +1061,7 @@ unsafe fn paint(hwnd: HWND) {
     text_in(hdc, VERSION, &footer, COL_MUTED, DT_RIGHT);
 
     paint_update(hdc, app, &cr);
+    paint_channel(hdc, app, &cr);
     paint_list(hdc, app, &cr);
 
     SelectObject(hdc, old_font);
@@ -1043,12 +1188,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
             }
             0
         }
+        WM_CHANNELS => {
+            let app = app_ptr(hwnd);
+            if !app.is_null() {
+                (*app).listing = false;
+                if let Ok(channels) = update::CHANNELS.lock() {
+                    (*app).channels = channels.clone();
+                }
+                InvalidateRect(hwnd, std::ptr::null(), FALSE);
+            }
+            0
+        }
         WM_COMMAND => {
             let id = wp & 0xFFFF;
             let code = ((wp >> 16) & 0xFFFF) as u32;
             let app = app_ptr(hwnd);
             if id == IDOK {
-                if !app.is_null() && !(*app).saves_view && !(*app).servers_view {
+                if !app.is_null() && !(*app).saves_view && !(*app).servers_view && !(*app).channels_view {
                     try_launch(hwnd);
                 }
             } else if !app.is_null() && code == EN_CHANGE && (id == ID_ADDRESS || id == ID_PORT) {
@@ -1093,7 +1249,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
         WM_ERASEBKGND => 1,
         WM_KEYDOWN => {
             let app = app_ptr(hwnd);
-            if wp as u32 == VK_RETURN && !app.is_null() && !(*app).saves_view && !(*app).servers_view {
+            if wp as u32 == VK_ESCAPE && !app.is_null() && (*app).channels_view {
+                show_channels(hwnd, &mut *app, false);
+                return 0;
+            }
+            if wp as u32 == VK_RETURN && !app.is_null() && !(*app).saves_view && !(*app).servers_view &&
+                !(*app).channels_view
+            {
                 try_launch(hwnd);
             }
             0
@@ -1149,12 +1311,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM)
                         PART_PLAY => try_launch(hwnd),
                         PART_SERVER => try_open_server(hwnd),
                         PART_UPDATE => try_update(hwnd),
+                        PART_CHANNEL => show_channels(hwnd, &mut *app, true),
                         PART_NEW => start_game(hwnd, "new"),
                         PART_LIST => show_servers(hwnd, &mut *app, true),
+                        PART_RESCAN if (*app).channels_view => start_channel_list(hwnd),
                         PART_RESCAN => start_scan(hwnd),
+                        PART_BACK if (*app).channels_view => show_channels(hwnd, &mut *app, false),
                         PART_BACK if (*app).servers_view => show_servers(hwnd, &mut *app, false),
                         PART_BACK => show_saves(hwnd, &mut *app, false),
                         PART_FOLDER => choose_folder(hwnd),
+                        p if p >= PART_ROW && (*app).channels_view => pick_channel(hwnd, (p - PART_ROW) as usize),
                         p if p >= PART_ROW => pick_server(hwnd, (p - PART_ROW) as usize),
                         p if p >= PART_DELETE => delete_slot(hwnd, (p - PART_DELETE) as usize),
                         p if p >= PART_SLOT => start_game(hwnd, &format!("slot{}", p - PART_SLOT + 1)),
