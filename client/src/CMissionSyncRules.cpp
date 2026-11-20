@@ -11,6 +11,7 @@
 #include "CMissionRulesCounters.h"
 #include "CMissionRulesWorld.h"
 #include "CMissionRulesGuestCars.h"
+#include "CCatalystRyderCar.h"
 #include "CMissionRulesCompare.h"
 #include "CMissionRulesOpcodes.h"
 #include "CMissionGuestCounts.h"
@@ -184,6 +185,7 @@ void CMissionSyncRules::Process()
     ProcessHomeInvasionGuestCars();
     ProcessDriveThruGuestCars();
     ProcessCatalystGuestCars();
+    ProcessCatalystRyderCar();
     ProcessRunningDogGuestCars(bTeleportPending);
     ProcessWrongSideTracksGuestCars(bTeleportPending);
     ProcessBeachArrival();

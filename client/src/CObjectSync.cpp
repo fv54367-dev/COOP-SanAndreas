@@ -144,7 +144,7 @@ void CObjectSync::Process()
                     it = ms_moving.erase(it);
                     continue;
                 }
-                if (now - it->second.lastMove > MOVING_QUIET_MS)
+                if (now - it->second.lastMove > MOVING_QUIET_MS && !IsCatalystRunning())
                 {
                     if (!ms_brokenCopies.count(it->first)) copy->second->m_bUsesCollision = it->second.collision;
                     it = ms_moving.erase(it);
@@ -341,15 +341,14 @@ void CObjectSync::HandleSync(Packets::World::ObjectSync* pPacket)
         pObject->m_bUsesCollision = pPacket->collision;
         if (CConfigLoader::ms_bObjectMovingNoCollide && IsCatalystRunning())
         {
+            // Catalyst: no copy of a mission object is ever solid. The crates' physics are the owner's (Ryder catches them
+            // there); a frozen, infinite-mass copy that turns solid again when the crate rests on the road stops the
+            // guests' Picador dead (2026-11-20).
             auto track = ms_moving.find(pPacket->objectid);
-            if (movedNow && pPacket->collision && track == ms_moving.end())
-                track = ms_moving.emplace(pPacket->objectid, SMovingCopy{}).first;
-            if (track != ms_moving.end())
-            {
-                if (movedNow) track->second.lastMove = GetTickCount();
-                track->second.collision = pPacket->collision;
-                pObject->m_bUsesCollision = false;
-            }
+            if (track == ms_moving.end()) track = ms_moving.emplace(pPacket->objectid, SMovingCopy{}).first;
+            if (movedNow) track->second.lastMove = GetTickCount();
+            track->second.collision = pPacket->collision;
+            pObject->m_bUsesCollision = false;
         }
     }
 

@@ -68,10 +68,13 @@ Para probar en esta PC, abrí `PROBAR_SOLO.bat`. El GTA de la izquierda es el ho
 - [ ] Con `mission-catalyst-guest-car=false` y `mission-guest-train=true`, el invitado queda arriba del vagón trasero. Al terminar el lanzamiento se despega. Usá esta configuración también para probar el ping y el lanzamiento desde el vagón.
 - [ ] Con ~100 de ping: el invitado arriba del vagón trasero va fluido.
 - [ ] Lanzar cajas: mantener disparo para cargar y soltar mirando a Ryder; cuenta igual que las del host. Dos invitados pueden lanzar; fuera del tren no deja.
-- [ ] (`object-moving-nocollide`) Las cajas que caen en la camioneta en marcha y las del tren se mueven sin chocar ni empujar al invitado.
+- [ ] (`object-moving-nocollide`) Las cajas del tren ya no chocan ni empujan al invitado ni le frenan el auto mientras corre Catalyst: las copias de objetos de misión no tienen colisión en toda la misión (la física de las cajas es del dueño, donde Ryder las atrapa).
 - [x] Primera cinemática: con el invitado a unos metros, el host no arranca hasta que llega ("Esperando a X"). A los 90 s sigue sola.
 - [x] Mini cinemáticas (barras negras): esperan al que quedó atrás o en otro interior.
 - [x] Después de la mini cinemática de los Ballas, el invitado cerca y a la vista NO se teletransporta.
+- [ ] (`mission-catalyst-ryder-car`) Al entrar la etapa de las cajas, el Picador de Ryder deja de andar solo: **lo maneja un invitado** y Ryder va arriba (sigue atrapando las cajas que lanza el host).
+- [ ] (`mission-catalyst-ryder-car`) Con 2-3 invitados aparece **un solo** Picador 600 extra al lado del de Ryder (no uno por invitado) y los demás suben ahí.
+- [ ] (`mission-catalyst-ryder-car`) El invitado **no** lanza cajas ni queda enganchado al vagón; sólo lanza el host.
 
 ## Robbing Uncle Sam
 - [ ] Al salir de Grove hay un Greenwood para los invitados al lado de la Mule.

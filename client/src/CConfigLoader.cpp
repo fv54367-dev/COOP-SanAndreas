@@ -273,6 +273,7 @@ void CConfigLoader::Load()
     ms_bMissionDriveThruFirstCar = readBool("mission-drive-thru-first-car");
     ms_bMissionTripSkipGuests = readBool("mission-trip-skip-guests");
     ms_bMissionCatalystGuestCar = readBool("mission-catalyst-guest-car");
+    ms_bMissionCatalystRyderCar = readBool("mission-catalyst-ryder-car");
     ms_bCoopJustBusiness = readBool("coop-just-business");
     ms_bCoopMaddDogg = readBool("coop-madd-dogg");
     ms_bCoopGrayImports = readBool("coop-gray-imports");
@@ -607,6 +608,7 @@ void CConfigLoader::Save()
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-drive-thru-first-car", ms_bMissionDriveThruFirstCar ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-trip-skip-guests", ms_bMissionTripSkipGuests ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-catalyst-guest-car", ms_bMissionCatalystGuestCar ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-catalyst-ryder-car", ms_bMissionCatalystRyderCar ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "coop-just-business", ms_bCoopJustBusiness ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "coop-madd-dogg", ms_bCoopMaddDogg ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "coop-gray-imports", ms_bCoopGrayImports ? "true" : "false", ms_sDataPath.c_str());

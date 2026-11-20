@@ -347,6 +347,14 @@ void CMissionGuestActions::Process()
         {
             Reset(false);
             if (!s || !(spec = Original(s))) return;
+            // Catalyst with the guests' Picador (mission-catalyst-ryder-car): only the owner throws crates; the guests
+            // drive Ryder's car instead of riding the caboose, so there is no session for them
+            if (spec && spec->action == 0 && CConfigLoader::ms_bMissionCatalystRyderCar)
+            {
+                active = s;
+                spec = nullptr;
+                return;
+            }
             active = s; session.owner = CNetworkPlayerManager::m_localPlayerId;
             session.mission = CMissionMirror::GetRunningMissionId(); session.epoch = ++epoch;
             if (!session.epoch) session.epoch = ++epoch;

@@ -24,7 +24,7 @@ Lo que el invitado **no** tiene en ninguna: los enemigos persiguen al host (pidi
 | 13 | Burning Desire | CRASH1 | Fuego sincronizado; el extintor/molotov que agarra uno también le llega al otro (antes se podía trabar). |
 | 14 | Gray Imports | DRUGS3 | El jefe no se escapa si el invitado lo sigue de cerca. Solo el host puede manejar los autos de la misión. |
 | 15 | Home Invasion | GUNS1 | Cajas por portador, ruido compartido y entrada por la puerta de atrás. |
-| 16 | Catalyst | RYDER3 | Picador extra para los invitados. Con `mission-catalyst-guest-car=false` y `mission-guest-train=true`, el invitado se engancha al tren y puede lanzar cajas. |
+| 16 | Catalyst | RYDER3 | Picador extra para los invitados. Con `mission-catalyst-guest-car=false` y `mission-guest-train=true`, el invitado se engancha al tren y puede lanzar cajas. Con `mission-catalyst-ryder-car=true` (2026-11-20): al entrar la etapa de atrapar, la grabación del Picador de Ryder se frena y **lo maneja un invitado**, con **un** Picador extra al lado para el resto; **sólo el host lanza** cajas. |
 | 17 | Robbing Uncle Sam | RYDER2 | Montacargas por jugador y Greenwood compartido. |
 | 18 | OG Loc | TWAR7 | Motos y auto compartido para invitados; Freddy no se escapa y su velocidad sigue al que lo persigue más cerca. |
 | 19 | Running Dog | SMOKE2 | Asientos del 466 y auto compartido; persecución. |

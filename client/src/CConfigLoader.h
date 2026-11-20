@@ -148,6 +148,7 @@ private:
 		{"mission-drive-thru-first-car", "true"},
 		{"mission-trip-skip-guests", "true"},
 		{"mission-catalyst-guest-car", "true"},
+		{"mission-catalyst-ryder-car", "true"},
 		{"mission-guest-car-copies", "false"},
 		{"mission-scripted-exit", "true"},
 		{"mirror-pickups", "true"},
@@ -514,6 +515,9 @@ public:
 	static inline bool ms_bMissionTripSkipGuests = true;
 	// Catalyst (RYDER3): one extra car of the mission's model for the guests to drive; off = the old train ride (mission-guest-train)
 	static inline bool ms_bMissionCatalystGuestCar = true;
+	// Catalyst (RYDER3, the guests' layout): the recorded route stops driving Ryder's Picador at the catch stage so a guest
+	// drives it, ONE more Picador is parked beside it for the rest and only the owner throws crates
+	static inline bool ms_bMissionCatalystRyderCar = true;
 	static inline bool ms_bCoopJustBusiness = true;
 	// MUSIC2: a bike for each guest for the escape from Madd Dogg's mansion
 	static inline bool ms_bCoopMaddDogg = true;
