@@ -1,7 +1,0 @@
-Adaptar la mission "Wrong Side Of The Tracks" para el modo cooperativo. Al iniciar la misión, que no le desaparezca sus vehículos a los otros jugadores que formen parte de la misión.
-
-Los jugadores invitados no ven el cono azul encima de cesar vialpando, y tampoco el blip azul que sigue a cesar vialpando.
-
-Al iniciar la carrera que se vean los blips de los corredores.
-
-Al llegar al punto e iniciar la carrera, que no aparezca el menu de carreras de Carrera VS o individual, que inicie de una sin ningún tipo de menu, intenta que sea lo mas parecido a la misión secundaria 8-track cooperativa, manteniendo los NPC de la misión.

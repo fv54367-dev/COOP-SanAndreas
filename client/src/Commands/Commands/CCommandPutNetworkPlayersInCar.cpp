@@ -520,7 +520,8 @@ void CCommandPutNetworkPlayersInCar::ProcessGuestVehicles()
 void CCommandPutNetworkPlayersInCar::QueueGuestPassenger(playerid_t player, CVehicle* vehicle, int seat, CRunningScript* script,
     const bool* enabled)
 {
-    if (!vehicle || !script || !enabled || seat < 0) return;
+    // GUEST_DRIVER_SEAT (-3) is the driver's seat: the receiver warps him in when nobody is driving (Catalyst's Picador)
+    if (!vehicle || !script || !enabled || (seat < 0 && seat != GUEST_DRIVER_SEAT)) return;
     const int ref = CPools::GetVehicleRef(vehicle);
     guestBoarding.push_back({player, ref, ref, seat, GetTickCount(), 0, false, script, enabled, true});
 }
@@ -574,6 +575,10 @@ int CCommandPutNetworkPlayersInCar::ParkSharedGuestCar(CVehicle* vehicle, CRunni
     // T98: parking (when the mission makes the vehicle) counts every guest of the mission around; nobody is in a seat yet
     const bool parkOnly = phase == GUEST_PARK_ONLY;
     const bool board = phase == GUEST_PARK_BOARD;
+    // Catalyst (owner's rule 21-11): a Picador seats the driver plus ONE passenger, so the guests get one extra Picador for
+    // every two of them, never one per guest (and never a third seat that the model does not have)
+    if (catalyst)
+        perVehicle = 2;
     std::vector<CNetworkPlayer*> guests;
     for (auto player : CNetworkPlayerManager::m_pPlayers)
         if (player->m_pPed && player->m_pPed->m_fHealth > 0.0f &&
@@ -635,8 +640,9 @@ int CCommandPutNetworkPlayersInCar::ParkSharedGuestCar(CVehicle* vehicle, CRunni
         CStreaming::RequestModel(model, eStreamingFlags::GAME_REQUIRED);
         CStreaming::LoadAllRequestedModels(false);
     }
-    // Catalyst: one extra car only (the owner's rule); the rest of the guests keep the old train ride
-    for (; first < guests.size() && !(catalyst && vehicles >= 1); first += perVehicle)
+    // Catalyst: one extra Picador per two guests left on foot (the one driving Ryder's car is not in this count)
+    const size_t catalystCars = ((guests.size() + (size_t)perVehicle - 1) / (size_t)perVehicle);
+    for (; first < guests.size() && !(catalyst && vehicles >= (int)catalystCars); first += perVehicle)
     {
         CVector pos;
         if (!FindGuestVehiclePosition(vehicle, pos, bike ? bikeOffsets : carOffsets, 8,

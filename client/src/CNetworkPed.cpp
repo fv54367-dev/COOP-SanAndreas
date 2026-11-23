@@ -217,15 +217,20 @@ static CAnimBlendAssociation* FindNamedAssociation(CPed* ped, bool forceInterior
     // (interior-anim-owner: task=200, primary slots empty, the top full-body anim is the standing idle).
     // Requiring the task dropped the pose and the copies stood on the chairs: for an interior actor a strong
     // partial named association is the pose itself, task or not (the bartender's 0x0605 does leave a task).
+    // npc-anim-attached (Catalyst, 20-11): the same for a ped ATTACHED to an entity. Ryder stands on the Picador
+    // (ryder3.sc:1853) and catches the crates with TASK_PICK_UP_OBJECT ... CATCH_BOX BOX (:2156); holding an
+    // animation BY HIERARCHY leaves group ANIM_GROUP_NONE (-1, AnimBlendAssociation.cpp), so it was dropped twice:
+    // here (partial without an interior) and in SendAnimSet's group loop. The guest only saw his idle.
     const bool interiorActor = forceInteriorActor || IsInteriorActor(ped);
+    const bool poseActor = interiorActor || (CConfigLoader::ms_bNpcAnimAttached && ped->m_pAttachedTo != nullptr);
 
     CAnimBlendAssociation* best = nullptr;
     for (CAnimBlendAssociation* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc;
          assoc = RpAnimBlendGetNextAssociation(assoc))
     {
-        if ((!assoc->m_bPlaying && !interiorActor) ||
-            assoc->m_fBlendAmount <= 0.0f || (assoc->m_bPartial && !(interiorActor && assoc->m_fBlendAmount > 0.5f)) ||
-            (interiorActor && assoc->m_fBlendDelta < 0.0f))
+        if ((!assoc->m_bPlaying && !poseActor) ||
+            assoc->m_fBlendAmount <= 0.0f || (assoc->m_bPartial && !(poseActor && assoc->m_fBlendAmount > 0.5f)) ||
+            (poseActor && assoc->m_fBlendDelta < 0.0f))
             continue;
         if (assoc->m_pHierarchy == nullptr)
             continue;
@@ -947,6 +952,8 @@ void CNetworkPed::ApplyRemoteDeath()
 
 // npc-anim-mirror: only peds this close to another player send their animation set
 static const float ANIM_MIRROR_RADIUS = 70.0f;
+// npc-aim-mirror-exclusive: how long a received set keeps the copy's own gun task disabled (ms)
+static const uint32_t ANIM_SET_FRESH_MS = 400;
 // npc-anim-mirror: a playing animation is only moved in time when it drifted more than this (seconds)
 static const float ANIM_MIRROR_TIME_DRIFT = 0.15f;
 
@@ -1150,6 +1157,9 @@ void CNetworkPed::ApplyAnimSet(Packets::Peds::PedAnimSet& packet)
         if (assoc->m_fBlendDelta > -4.0f)
             assoc->m_fBlendDelta = -4.0f;
     }
+
+    // npc-aim-mirror-exclusive: this set is the pose of the copy from now on
+    m_nLastAnimSetAt = CConfigLoader::GetSyncTime();
 }
 
 // npc-aim-sync. CTaskSimpleUseGun only lives while something commands it every frame: ControlGun (0x61E040) sets
@@ -1164,6 +1174,16 @@ void CNetworkPed::ProcessAim()
     CPed* ped = m_pPed;
     if (m_bSyncing || ped == nullptr || ped->m_pIntelligence == nullptr)
         return;
+
+    // npc-aim-mirror-exclusive: the mirror already brings the gun animation of its syncer as a partial,
+    // and the blend this task does (SetMoveAnim) retires the crouch the mirror applies: the copy flickered
+    // standing/crouched. While the set keeps arriving, the task is not created and nothing is commanded.
+    if (CConfigLoader::ms_bNpcAimMirrorExclusive && CConfigLoader::ms_bNpcAnimMirror && m_nLastAnimSetAt != 0 &&
+        CConfigLoader::GetSyncTime() - m_nLastAnimSetAt < ANIM_SET_FRESH_MS)
+    {
+        m_bFireRequested = false;
+        return;
+    }
 
     bool bAim = m_bAiming;
     if (m_nShotAimUntil != 0)
@@ -1867,7 +1887,9 @@ void CNetworkPed::UpdateTaskSync()
     {
         CAnimBlendAssociation* relevant = FindRelevantAssociation(ped);
         CAnimBlendAssociation* namedPose = CConfigLoader::ms_bNpcNamedAnimSync ? FindNamedAssociation(ped) : nullptr;
-        if (IsInteriorActor(ped) && namedPose &&
+        // npc-anim-attached: a ped attached to an entity (Ryder on the Picador) keeps its idle as the strongest
+        // full-body association while its catch is a partial one, so the named pose has to win when it blends as much
+        if ((IsInteriorActor(ped) || (CConfigLoader::ms_bNpcAnimAttached && ped->m_pAttachedTo != nullptr)) && namedPose &&
             (!relevant || namedPose->m_fBlendAmount >= relevant->m_fBlendAmount))
             relevant = nullptr;
         if (CAnimBlendAssociation* assoc = relevant)
@@ -1896,6 +1918,21 @@ void CNetworkPed::UpdateTaskSync()
                 animTime = named->m_fCurrentTime;
                 animSpeed = named->m_fSpeed;
             }
+        }
+    }
+
+    // npc-anim-attached diagnosis (Catalyst, 20-11): what an attached ped (Ryder on the Picador) actually sends, so the
+    // retest tells whether the catch reaches the copies and which association it was
+    if (CConfigLoader::ms_bNpcAnimAttached && ped->m_pAttachedTo != nullptr)
+    {
+        static uint32_t lastAttachedLog = 0;
+        const uint32_t nowAttached = GetTickCount();
+        if (nowAttached - lastAttachedLog > 2000)
+        {
+            lastAttachedLog = nowAttached;
+            CMissionMirror::LogEventf("ped-anim-attached model=%d invec=%d task=%d anim=%d named=%d block=%.15s grp=%d",
+                ped->m_nModelIndex, ped->m_nPedFlags.bInVehicle ? 1 : 0, (int)taskType, hasAnim ? 1 : 0,
+                namedAnim ? 1 : 0, animBlock, (int)animGroup);
         }
     }
 

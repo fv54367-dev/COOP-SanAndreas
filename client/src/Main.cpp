@@ -219,6 +219,7 @@ public:
             CGarageSync::Process();
             CMissionMachines::Process();
             CMissionObjectMoves::Process();
+            CObjectSync::FrameUpdate();  // object-state-smooth: interpolate the copies towards the last packet
             CMissionWarTable::Process();
             CrashfixHooks::ProcessPoolWatch();
             CPerfWatch::Process();

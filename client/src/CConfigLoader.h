@@ -128,7 +128,11 @@ private:
 		{"npc-aim-sync", "true"},
 		{"npc-velocity-sync", "true"},
 		{"npc-anim-mirror", "true"},
+		{"npc-aim-mirror-exclusive", "true"},
+		{"npc-anim-attached", "true"},
 		{"player-anim-mirror", "true"},
+		{"scene-walk-sync", "true"},
+		{"player-anim-diag", "false"},
 		{"emergency-dedupe", "true"},
 		{"spawn-watch", "true"},
 		{"player-jack-native", "true"},
@@ -157,6 +161,7 @@ private:
 		// .ini, so nobody could see or turn them off. Each one keeps the exact default Load() used.
 		{"ambulance-guest-patients", "true"},
 		{"camera-mirror-interior-guard", "true"},
+		{"camera-guest-driver", "true"},
 		{"chat-tpm-fijar", "true"},
 		{"cheat-announce", "true"},
 		{"cheat-menu-all", "true"},
@@ -247,6 +252,10 @@ public:
 	// clients mirror the host's script camera during the scenes of a synced mission
 	static inline bool ms_bCameraMirror = true;
 	static inline bool ms_bCameraMirrorInteriorGuard = true;  // camera-mirror-interior-guard: no camera mirroring around interiors
+	// camera-guest-driver: a guest who DRIVES with his own control keeps his own camera (the authority's camera opcodes are
+	// not replayed on him and a script camera left over is given back). Catalyst's train: the guest drove Ryder's Picador
+	// seeing the host's camera until he got into a car by hand
+	static inline bool ms_bCameraGuestDriver = true;
     static inline bool ms_bCoopLowrider = true;
     static inline bool ms_bLowriderKeepCar = true;
     // VS race: the owner sends a common start instant (server clock) and every client starts the race then
@@ -478,8 +487,18 @@ public:
 	static inline bool ms_bNpcVelocitySync = true;
 	// the copy of an NPC on foot plays the same set of animations as in the game of its syncer (PED_ANIM_SET)
 	static inline bool ms_bNpcAnimMirror = true;
+	// npc-aim-mirror-exclusive: while the mirror is feeding a copy its own animation set, the copy does not create or
+	// command its gun task (the two blend the base animation over each other and the copy flickers crouch/stand)
+	static inline bool ms_bNpcAimMirrorExclusive = true;
+	// the copy of an NPC ATTACHED to an entity (Ryder standing on the Picador in Catalyst, ryder3.sc:1853) also mirrors
+	// the task animation it plays as a strong PARTIAL (CATCH_BOX, group NAMED_ANIM_GROUP): without this the copy only
+	// stands with its idle and "talks" on the guest
+	static inline bool ms_bNpcAnimAttached = true;
 	// the copy of a player plays the action animations (scripts, shops, sitting...) of his CJ (PLAYER_ANIM_MIRROR)
 	static inline bool ms_bPlayerAnimMirror = true;
+	static inline bool ms_bSceneWalkSync = true;
+	// player-anim-diag: the player-anim-slide line in the mirror log (off: the logs stay clean)
+	static inline bool ms_bPlayerAnimDiag = false;
 	// a vehicle blip goes away for the player inside that vehicle (mirrored blips and the guests' parked copies)
 	static inline bool ms_bGuestCarBlipHide = true;
 	// chat commands /tpm (to the map waypoint) and /fijar (stick to the vehicle you stand on)
@@ -507,6 +526,9 @@ public:
 	static inline bool ms_bCoopRobbingUncleSam = true;
 	static inline bool ms_bCoopRobbingGuestDeliver = true;
 	static inline bool ms_bObjectMovingNoCollide = true;
+	// object-state-smooth: the copies of mission objects are drawn moving from the previous packet to the new one instead
+	// of jumping with each packet (Catalyst's thrown crates and the crates riding the train wagon, 20-11)
+	static inline bool ms_bObjectStateSmooth = true;
 	// OG Loc / Drive-Thru (2nd car): the guests are put inside the parked guest car (driver + passengers), even with mission-no-auto-board
 	static inline bool ms_bMissionGuestCarBoard = true;
 	// Drive-Thru: the guests' car is parked after the first cutscene (next to the mission Greenwood), not when the host drives off

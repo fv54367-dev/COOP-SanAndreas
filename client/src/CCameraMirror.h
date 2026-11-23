@@ -28,10 +28,17 @@ public:
     // the bars of a scene the synced mission script directs (authority) or the authority's bars mirrored here (guest);
     // not a real cutscene, a garage or a shop
     static bool IsMissionSceneWide();
+    // camera-guest-driver: true = do NOT replay the authority's camera opcode here. A guest who drives with his own
+    // control keeps his own camera: Catalyst's train scene left him a fixed camera from the host until he got into a car
+    static bool SkipRemoteCamera(uint16_t opcode);
 
 private:
     static void ProcessFadeGuard();
     static bool IsFadeStuck();
+    // camera-guest-driver: gives back a script camera that stayed on this client with nobody owning the moment
+    static void ProcessStuckScriptCamera();
+    static inline uint32_t ms_nStuckCamSince = 0;
+    static inline uint32_t ms_nLastStuckRestore = 0;
     static bool IsScriptCameraActive(bool bCountWide);
     static void SendHost();
     static void UpdateClientWide();

@@ -1628,6 +1628,9 @@ void COpCodeSync::HandlePacket(const uint8_t* buffer, int bufferSize)
         header.opcode == 0x0159 || header.opcode == 0x015F || header.opcode == 0x0160 ||
         header.opcode == 0x02EB || header.opcode == 0x0373 || header.opcode == COMMAND_SWITCH_WIDESCREEN)) return;
 
+    // camera-guest-driver: a guest who drives with his own control does not adopt the authority's camera opcodes
+    if (CCameraMirror::SkipRemoteCamera(header.opcode)) return;
+
     if ((header.opcode & 0x7FFF) == 0x04BB && CHomeInvasion::SkipRemoteAreaVisible())
     {
         CHomeInvasion::OnOwnerAreaVisible(scriptParamsBuffer[0].value);

@@ -7,6 +7,7 @@ public:
     static void Process();
     static void Render();
     static void Reset();
+    static bool InScriptedGuestScene();
     static bool ControlsPed(CPed* ped);
     static void HandlePacket(const Packets::Scripts::CutscenePartners& packet);
 };

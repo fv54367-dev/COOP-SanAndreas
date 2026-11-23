@@ -355,7 +355,12 @@ void PlaceLocalGuest(CPed* me, CPed* principal, uint32_t now) {
     CVector d = anchor - g.anchor;
     // Only the anchor's move re-places him; covering the camera hides him below instead. Moving him out of the shot
     // re-teleported him every 500 ms in small interiors, where every spot covers (Ryder's pizzeria, 2026-11-18).
-    bool need = !g.placed || d.x * d.x + d.y * d.y > 3.5f * 3.5f;
+    // cut-scene walk: re-placing a guest who is still walking re-issues TASK_GO_STRAIGHT_TO_COORD, which REPLACES the
+    // running task and restarts its walk cycle from frame 0. While the principal walked, this fired every ~800 ms
+    // (log 21-11: scene-guest-place run 5.0/5.3/5.4 m, one per second) and the copy advanced without the legs ever
+    // completing a cycle: "duro". While he walks, only a real gap re-plans him.
+    const float replan = g.walking ? 8.0f : 3.5f;
+    bool need = !g.placed || d.x * d.x + d.y * d.y > replan * replan;
     if (need && now - g.lastTry >= 500) {
         g.lastTry = now;
         CVector spot; float heading = 0.0f; const char* why = "";
@@ -476,6 +481,10 @@ void CCutscenePartners::Init() {
     if(!memcmp(reinterpret_cast<void*>(0x53E9F9),expected,sizeof expected))
         patch::RedirectCall(0x53E9F9,ConstructRenderListWithPartners);
     else CMissionMirror::LogEvent("cutscene-partners render call differs; hook disabled");
+}
+
+bool CCutscenePartners::InScriptedGuestScene() {
+    return sceneHeld && !CCutsceneMgr::ms_running && Eligible();
 }
 
 bool CCutscenePartners::ControlsPed(CPed* ped) {

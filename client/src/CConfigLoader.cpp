@@ -112,6 +112,7 @@ void CConfigLoader::Load()
     ms_bPreciseTimers = readBool("precise-timers");
     ms_bCameraMirror = readBool("camera-mirror");
     ms_bCameraMirrorInteriorGuard = readBool("camera-mirror-interior-guard");
+    ms_bCameraGuestDriver = readBool("camera-guest-driver");
     ms_bNpcTaskSync = readBool("npc-task-sync");
     ms_bNpcNamedAnimSync = readBool("npc-named-anim-sync");
     ms_bNpcSyncedPoseKeep = readBool("npc-synced-pose-keep");
@@ -249,7 +250,11 @@ void CConfigLoader::Load()
     ms_bNpcDriveBySync = readBool("npc-driveby-sync");
     ms_bNpcVelocitySync = readBool("npc-velocity-sync");
     ms_bNpcAnimMirror = readBool("npc-anim-mirror");
+    ms_bNpcAimMirrorExclusive = readBool("npc-aim-mirror-exclusive");
+    ms_bNpcAnimAttached = readBool("npc-anim-attached");
     ms_bPlayerAnimMirror = readBool("player-anim-mirror");
+    ms_bSceneWalkSync = readBool("scene-walk-sync");
+    ms_bPlayerAnimDiag = readBool("player-anim-diag");
     ms_bGuestCarBlipHide = readBool("guest-car-blip-hide");
     ms_bChatTpmFijar = readBool("chat-tpm-fijar");
     ms_bPlayerListCoopSa = readBool("player-list-coopsa");
@@ -269,6 +274,7 @@ void CConfigLoader::Load()
     ms_bCoopRobbingUncleSam = readBool("coop-robbing-uncle-sam");
     ms_bCoopRobbingGuestDeliver = readBool("coop-robbing-guest-deliver");
     ms_bObjectMovingNoCollide = readBool("object-moving-nocollide");
+    ms_bObjectStateSmooth = readBool("object-state-smooth");
     ms_bMissionGuestCarBoard = readBool("mission-guest-car-board");
     ms_bMissionDriveThruFirstCar = readBool("mission-drive-thru-first-car");
     ms_bMissionTripSkipGuests = readBool("mission-trip-skip-guests");
@@ -428,6 +434,8 @@ void CConfigLoader::Save()
         CONFIG_SECTION.c_str(), "hud-hide-all-f2", ms_bHudHideAllF2 ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "camera-mirror-interior-guard",
         ms_bCameraMirrorInteriorGuard ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "camera-guest-driver",
+        ms_bCameraGuestDriver ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
         CONFIG_SECTION.c_str(), "skip-death-arrest-help", ms_bSkipDeathArrestHelp ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(
@@ -553,7 +561,15 @@ void CConfigLoader::Save()
         ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "npc-anim-mirror", ms_bNpcAnimMirror ? "true" : "false",
         ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "npc-aim-mirror-exclusive", ms_bNpcAimMirrorExclusive ? "true" : "false",
+        ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "npc-anim-attached", ms_bNpcAnimAttached ? "true" : "false",
+        ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "player-anim-mirror", ms_bPlayerAnimMirror ? "true" : "false",
+        ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "scene-walk-sync", ms_bSceneWalkSync ? "true" : "false",
+        ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "player-anim-diag", ms_bPlayerAnimDiag ? "true" : "false",
         ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "guest-car-blip-hide", ms_bGuestCarBlipHide ? "true" : "false",
         ms_sDataPath.c_str());
@@ -604,6 +620,7 @@ void CConfigLoader::Save()
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "coop-robbing-uncle-sam", ms_bCoopRobbingUncleSam ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "coop-robbing-guest-deliver", ms_bCoopRobbingGuestDeliver ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "object-moving-nocollide", ms_bObjectMovingNoCollide ? "true" : "false", ms_sDataPath.c_str());
+    WritePrivateProfileString(CONFIG_SECTION.c_str(), "object-state-smooth", ms_bObjectStateSmooth ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-guest-car-board", ms_bMissionGuestCarBoard ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-drive-thru-first-car", ms_bMissionDriveThruFirstCar ? "true" : "false", ms_sDataPath.c_str());
     WritePrivateProfileString(CONFIG_SECTION.c_str(), "mission-trip-skip-guests", ms_bMissionTripSkipGuests ? "true" : "false", ms_sDataPath.c_str());

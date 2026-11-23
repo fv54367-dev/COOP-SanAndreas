@@ -104,6 +104,8 @@ public:
 	uint32_t m_nDriveByUntil = 0;  // npc-driveby-sync: a shot from a vehicle keeps the copy in its drive-by
 	bool m_bCopyDriveBy = false;  // npc-driveby-sync: the drive-by task of the copy is ours
 	uint32_t m_nShotAimUntil = 0;  // a shot keeps the copy aiming for a moment even if it was not
+	// npc-aim-mirror-exclusive: when its mirror sent a set this recently the copy does not run its own gun task
+	uint32_t m_nLastAnimSetAt = 0;
 	// npc-anim-mirror (remote copy): anim blocks referenced while the copy plays animations from them
 	std::vector<int> m_aMirrorAnimBlocks;
 

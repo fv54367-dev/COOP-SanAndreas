@@ -15,6 +15,8 @@ public:
     static uint32_t GetNetworkId(int handle);
     static CObject* Resolve(uint32_t id);
     static void Process();
+    // object-state-smooth: per frame, moves the copies from the previous packet's position to the new one
+    static void FrameUpdate();
     static void ResendAll();  // host: a player connected
     static void HandleSync(Packets::World::ObjectSync* pPacket);
     static void HandleRemove(Packets::World::ObjectRemove* pPacket);

@@ -189,6 +189,7 @@ void CCameraMirror::ProcessFadeGuard()
 void CCameraMirror::Process()
 {
     ProcessFadeGuard();
+    ProcessStuckScriptCamera();
     if (CHighStakesRace::OwnMarkers()) {
         if (ms_bCameraTaken) RestoreCamera();
         ms_bActive = ms_bHostWide = ms_bWideForced = false;
@@ -455,6 +456,90 @@ void CCameraMirror::RestoreCamera()
     ms_bHasSnapshot = false;
     ms_nLastFrameTick = 0;
     ms_fLastAppliedFov = -1.0f;
+}
+
+// camera-guest-driver (Catalyst, 20-11): this game replays the authority's camera opcodes (0x015F / 0x0160 / 0x0373 /
+// 0x02EB are in the synced table, COpCodeSync.cpp), so a scene camera of the host can stay latched on a guest that is
+// playing. The owner's report: driving Ryder's Picador he kept the host's camera until he got into a car by hand. Two
+// guards: SkipRemoteCamera drops those opcodes while this client drives with control, and ProcessStuckScriptCamera
+// gives back a script camera that is still there with nobody owning the moment.
+bool CCameraMirror::SkipRemoteCamera(uint16_t opcode)
+{
+    if (!CConfigLoader::ms_bCameraGuestDriver || CCoopMission::IsScriptAuthority())
+        return false;
+
+    switch (opcode & 0x7FFF)
+    {
+    case 0x0158:  // point camera at char / at car
+    case 0x0159:
+    case 0x015F:
+    case 0x0160:
+    case COMMAND_SWITCH_WIDESCREEN:
+    case 0x02EB:  // restore_camera_jumpcut
+    case 0x0373:  // set_camera_behind_player
+        break;
+    default:
+        return false;
+    }
+
+    CPlayerPed* me = FindPlayerPed(0);
+    if (me == nullptr || !me->m_nPedFlags.bInVehicle || me->m_pVehicle == nullptr || me->m_pVehicle->m_pDriver != me)
+        return false;
+    CPad* pad = CPad::GetPad(0);
+    if (pad == nullptr || pad->DisablePlayerControls != 0)
+        return false;
+    return !CCutsceneMgr::ms_running && !ms_bActive && !ms_bHostWide;
+}
+
+void CCameraMirror::ProcessStuckScriptCamera()
+{
+    if (!CConfigLoader::ms_bCameraGuestDriver || CCoopMission::IsScriptAuthority())
+    {
+        ms_nStuckCamSince = 0;
+        return;
+    }
+
+    CPlayerPed* me = FindPlayerPed(0);
+    if (me == nullptr || !me->m_nPedFlags.bInVehicle || me->m_pVehicle == nullptr || me->m_pVehicle->m_pDriver != me ||
+        ms_bActive || ms_bHostWide || TheCamera.m_bWideScreenOn || CCutsceneMgr::ms_running || CCoopPool::OwnView() ||
+        CCoopLowrider::OwnContest() || CHighStakesRace::OwnMarkers())
+    {
+        ms_nStuckCamSince = 0;
+        return;
+    }
+
+    CPad* pad = CPad::GetPad(0);
+    if (pad == nullptr || pad->DisablePlayerControls != 0)
+    {
+        ms_nStuckCamSince = 0;
+        return;
+    }
+
+    const eCamMode mode = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode;
+    // ONLY MODE_FIXED is a stuck script camera (it is what SET_FIXED_CAMERA_POSITION / POINT_CAMERA_AT_POINT set).
+    // MODE_CAM_ON_A_STRING (0x12) is the NORMAL car camera, in IsScriptControlledCamMode only for scripted shots, and the
+    // persist / vector flags stay set after any mission camera: with any of those this watchdog restored the camera every
+    // 3 s while the guest drove (owner's report 21-11, "la cámara se me resetea cada unos segundos", log mode=18 car=600).
+    if (mode != MODE_FIXED)
+    {
+        ms_nStuckCamSince = 0;
+        return;
+    }
+
+    // dwell first (a real scene sets its camera for more than one frame), then one restore per episode
+    const uint32_t now = GetTickCount();
+    if (ms_nStuckCamSince == 0)
+    {
+        ms_nStuckCamSince = now;
+        return;
+    }
+    if (now - ms_nStuckCamSince < 500 || now - ms_nLastStuckRestore < 10000)
+        return;
+
+    ms_nLastStuckRestore = now;
+    ms_nStuckCamSince = 0;
+    RestoreCamera();
+    CMissionMirror::LogEventf("catalyst-camera restuck mode=%d car=%d", (int)mode, me->m_pVehicle->m_nModelIndex);
 }
 
 PACKET_HANDLER(ePacketType::CAMERA_MIRROR, Packets::Scripts::CameraMirror* pCameraMirror)

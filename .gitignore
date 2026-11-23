@@ -1,32 +1,30 @@
-# Xmake cache
+# Xmake
 .xmake/
 build/
 
-# MacOS Cache
-.DS_Store
-
-.cache/
+# Editores
 .vs/
+.vscode/
 vs2022/
 vsxmake2022/
 vsxmake2026/
-output/
+.cache/
 compile_commands.json
+*.aps
+.DS_Store
+
+# Sanny Builder
 scm/sanny.stdout.txt
 scm/sanny.stderr.txt
 
-# Runtime de tareas (log y salidas de Codex/opencode)
-tareas/cadena.log
-tareas/*_salida.txt
-
-# Binarios: los compila y publica el CI como paquete (AGENTS.md regla 4)
+# Binarios: los compila y publica el CI en los releases
 dist/*.dll
 dist/*.exe
 dist/*.manifest
 dist/*.scm
 dist/*.img
 
-# Launcher Rust (cargo)
+# Launcher (cargo)
 launcher/target/
 
 __pycache__/

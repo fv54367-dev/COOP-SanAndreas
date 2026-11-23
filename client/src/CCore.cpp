@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "CPlayerAnimMirror.h"
 #include "CMissionMode.h"
 #include "CVsRace.h"
 #include "CVsLobby.h"
@@ -98,6 +99,7 @@ void CCore::Init()
     COpCodeSync::Init();
     CMissionMirror::Init();
     CNetworkPadSync::Init();
+    CPlayerAnimMirror::Init();
     Events::initGameEvent.after += []
     {
         CPatch::TemporaryPatches();

@@ -8,6 +8,7 @@
 #include <CAnimBlendHierarchy.h>
 #include "CCutscenePartners.h"
 #include "CMissionMirror.h"
+#include "CCoopMission.h"
 
 // Same idea as npc-anim-mirror / npc-named-anim-sync (CNetworkPed.cpp), per player. The helpers below are small copies
 // of the static ones there, so CNetworkPed.cpp stays untouched. Evidence (gta-reversed Animation/):
@@ -152,7 +153,25 @@ uint64_t ms_nLastSignature = 0;
 int ms_nLastCount = 0;
 int ms_nEmptyResends = 0;  // 0..2 empty sets still to resend after the last one became empty
 
-bool Describe(CAnimBlendAssociation* assoc, Packets::Players::PlayerAnimMirror::SAnim& out, uint64_t& signature)
+// The scene moves CJ through a go-to task while the remote on-foot controller can have an empty pad.
+bool IsScriptedWalk(CPed* ped)
+{
+    if (!CConfigLoader::ms_bSceneWalkSync || !CCutscenePartners::InScriptedGuestScene() || !ped->m_pIntelligence)
+        return false;
+    CTask* task = ped->m_pIntelligence->m_TaskMgr.GetSimplestActiveTask();
+    if (!task)
+        return false;
+    const auto type = task->GetTaskType();
+    return type == TASK_SIMPLE_GO_TO_POINT || type == TASK_SIMPLE_GO_TO_POINT_FINE;
+}
+
+bool IsWalkClip(int group, int id)
+{
+    return group >= ANIM_GROUP_PLAYER && group <= ANIM_GROUP_PLAYERSNEAK &&
+        (id == ANIM_DEFAULT_WALK_CIVI || id == ANIM_DEFAULT_RUN_CIVI);
+}
+
+bool Describe(CAnimBlendAssociation* assoc, bool scriptedWalk, Packets::Players::PlayerAnimMirror::SAnim& out, uint64_t& signature)
 {
     if (assoc->m_pHierarchy == nullptr || assoc->m_fBlendAmount < 0.1f || assoc->m_fBlendDelta < 0.0f ||
         (assoc->m_nFlags & ANIMATION_INDESTRUCTIBLE))  // facial / always-on ones
@@ -180,7 +199,8 @@ bool Describe(CAnimBlendAssociation* assoc, Packets::Players::PlayerAnimMirror::
     }
 
     const int id = NormalizeAnimId(assoc->m_nAnimGroup, assoc->m_nAnimId);
-    if (id < 0 || id > 8191 || assoc->m_nAnimGroup > 4095 || !IsActionAnimation(assoc->m_nAnimGroup, id))
+    const bool gait = scriptedWalk && out.playing && !out.partial && IsWalkClip(assoc->m_nAnimGroup, id);
+    if (id < 0 || id > 8191 || assoc->m_nAnimGroup > 4095 || (!gait && !IsActionAnimation(assoc->m_nAnimGroup, id)))
         return false;
     out.group = assoc->m_nAnimGroup;
     out.animId = (uint16_t)id;
@@ -201,13 +221,14 @@ void ProcessEmitter(uint32_t now)
     if (CConfigLoader::ms_bPlayerAnimMirror && ped != nullptr && ped->m_pRwClump != nullptr && ped->IsAlive() &&
         !ped->m_nPedFlags.bInVehicle && !LocalSceneBusy())
     {
+        const bool scriptedWalk = IsScriptedWalk(ped);
         float blends[Packets::Players::PlayerAnimMirror::MAX_ANIMS]{};
         for (CAnimBlendAssociation* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc;
              assoc = RpAnimBlendGetNextAssociation(assoc))
         {
             Packets::Players::PlayerAnimMirror::SAnim anim;
             uint64_t sig = 0;
-            if (!Describe(assoc, anim, sig))
+            if (!Describe(assoc, scriptedWalk, anim, sig))
                 continue;
 
             // strongest first, at most MAX_ANIMS
@@ -297,6 +318,14 @@ struct SRemote
     CPed* ped = nullptr;
     std::vector<SOwned> owned;
     std::vector<int> blocks;  // animation blocks we hold a reference on while the associations play
+    // player-anim-slide (diagnostic): last sample of the copy's head bone
+    uint32_t diagAt = 0;
+    uint32_t sceneWalkFrames = 0;
+    bool hasBone = false;
+    CVector lastBone{};
+    bool poseAny = false;
+    float poseMin = 0.0f;
+    float poseMax = 0.0f;
 };
 
 std::unordered_map<CNetworkPlayer*, SRemote> ms_remotes;
@@ -414,6 +443,9 @@ void ApplyRemote(CNetworkPlayer* player, SRemote& remote, uint32_t now)
     for (int i = 0; i < remote.packet.count && i < Packets::Players::PlayerAnimMirror::MAX_ANIMS; i++)
     {
         const Packets::Players::PlayerAnimMirror::SAnim& anim = remote.packet.anims[i];
+
+        if (!anim.named && IsWalkClip(anim.group, anim.animId))
+            continue; // the native player controller blends the gait, without taking ownership of its associations
 
         int blockIndex = -1;
         CAnimBlendHierarchy* hierarchy = nullptr;
@@ -550,6 +582,94 @@ void ApplyRemote(CNetworkPlayer* player, SRemote& remote, uint32_t now)
         EnsureBaseAnimation(ped);
 }
 
+// player-anim-slide (diagnostic only, no behaviour change).
+// CPed::GetBonePosition(updateSkinBones=false) does NOT read the animated skeleton unless CPed::PreRender already ran
+// this frame: it returns GetPedBoneStdPosition(bone) transformed by the ped matrix, a CONSTANT table (gta-reversed
+// Ped.cpp:2108). So the previous line was reading a fixed pose and could never prove anything.
+// bCalledPreRender is cleared by CPedIntelligence::Process every frame and set by CPed::PreRender (Ped.cpp:2843), so
+// `pre=` alone answers the real question: is the copy ever passing through PreRender? Only with pre=1 is `pose` read
+// from the animated hierarchy (head-foot distance: it depends on the rotations, never on where the ped is).
+void DiagnoseCopy(CNetworkPlayer* player, SRemote& remote)
+{
+    if (!CConfigLoader::ms_bPlayerAnimDiag)
+        return;
+    CPed* ped = remote.ped;
+    if (ped == nullptr || !ped->IsAlive() || ped->m_pRwClump == nullptr)
+        return;
+
+    const bool pre = ped->m_nPedFlags.bCalledPreRender != 0;
+    // same instant, our own ped: it always goes through CPed::PreRender. If this is 1 and `pre` is 0, the copy really
+    // never gets there; if both are 0 it is only that this runs before the render phase and the reading means nothing.
+    CPed* local = FindPlayerPed();
+    const int localPre = local != nullptr ? (local->m_nPedFlags.bCalledPreRender != 0 ? 1 : 0) : -1;
+    float pose = -1.0f;
+    RwV3d head{};
+    if (pre)
+    {
+        RwV3d foot{};
+        ped->GetBonePosition(head, 8 /*BONE_HEAD*/, false);
+        ped->GetBonePosition(foot, 44 /*BONE_LEFTFOOT*/, false);
+        const float dx = head.x - foot.x, dy = head.y - foot.y, dz = head.z - foot.z;
+        pose = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (!(pose > 0.05f && pose < 5.0f))
+            pose = -1.0f;
+    }
+
+    if (pose > 0.0f)
+    {
+        if (!remote.poseAny)
+        {
+            remote.poseMin = remote.poseMax = pose;
+            remote.poseAny = true;
+        }
+        else
+        {
+            remote.poseMin = std::min(remote.poseMin, pose);
+            remote.poseMax = std::max(remote.poseMax, pose);
+        }
+    }
+
+    const uint32_t now = GetTickCount();
+    if (now - remote.diagAt < 2000)
+        return;
+    remote.diagAt = now;
+
+    CAnimBlendAssociation* top = nullptr;
+    for (CAnimBlendAssociation* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc;
+         assoc = RpAnimBlendGetNextAssociation(assoc))
+    {
+        if (assoc->m_bPartial || assoc->m_fBlendAmount <= 0.01f)
+            continue;
+        if (top == nullptr || assoc->m_fBlendAmount > top->m_fBlendAmount)
+            top = assoc;
+    }
+
+    float bone = -1.0f;
+    if (pre && remote.hasBone)
+    {
+        const float bx = head.x - remote.lastBone.x, by = head.y - remote.lastBone.y, bz = head.z - remote.lastBone.z;
+        bone = std::sqrt(bx * bx + by * by + bz * bz);
+        if (bone > 50.0f)  // teleport or a new ped: not a pose reading
+            bone = -1.0f;
+    }
+    remote.hasBone = pre;
+    if (pre)
+        remote.lastBone = CVector(head.x, head.y, head.z);
+
+    const float poseRange = remote.poseAny ? remote.poseMax - remote.poseMin : -1.0f;
+    remote.poseAny = false;
+
+    CMissionMirror::LogEventf(
+        "player-anim-slide player=%d pose=%.3f poseRange=%.3f pre=%d localpre=%d off=%d dont=%d bone=%.3f anim=%d/%d "
+        "blend=%.2f clipSpeed=%.2f time=%.2f/%.2f speed=%.2f sceneWalkFrames=%u",
+        (int)player->m_playerId.value(), pose, poseRange, pre ? 1 : 0, localPre, ped->m_bOffscreen ? 1 : 0,
+        ped->m_bDontUpdateHierarchy ? 1 : 0, bone, top ? (int)top->m_nAnimGroup : -2,
+        top ? (int)top->m_nAnimId : -2, top ? top->m_fBlendAmount : 0.0f, top ? top->m_fSpeed : 0.0f,
+        top ? top->m_fCurrentTime : 0.0f, (top && top->m_pHierarchy) ? top->m_pHierarchy->m_fTotalTime : 0.0f,
+        ped->m_vecMoveSpeed.Magnitude() * 50.0f, remote.sceneWalkFrames);
+    remote.sceneWalkFrames = 0;
+}
+
 void ProcessReceivers(uint32_t now)
 {
     for (auto it = ms_remotes.begin(); it != ms_remotes.end();)
@@ -572,10 +692,54 @@ void ProcessReceivers(uint32_t now)
             remote.checked = now;
             ApplyRemote(player, remote, now);
         }
+        DiagnoseCopy(player, remote);
         ++it;
     }
 }
+// PlayerControlZelda calls this after it computes the blend ratio from the pad. Supplying the gait
+// here lets the game keep a single walk cycle and use the model's own animations.
+void __fastcall SetSceneMoveAnim(CPlayerPed* ped)
+{
+    if (CConfigLoader::ms_bSceneWalkSync && CConfigLoader::ms_bPlayerAnimMirror &&
+        CCutscenePartners::InScriptedGuestScene() && ped->m_pPlayerData && !ped->m_nPedFlags.bIsDucking)
+    {
+        auto* player = CNetworkPlayerManager::GetPlayer(ped);
+        auto it = ms_remotes.find(player);
+        if (it != ms_remotes.end() && it->second.ped == ped && CanApply(player, ped) &&
+            CCoopMission::ShouldIncludeNetworkPlayer(player) && GetTickCount() - it->second.heard < 2 * REFRESH_INTERVAL)
+        {
+            // The packet is sorted by blend weight. A stronger full-body action takes priority over a step.
+            const auto& packet = it->second.packet;
+            for (int i = 0; i < packet.count; ++i)
+            {
+                const auto& anim = packet.anims[i];
+                if (anim.partial)
+                    continue;
+                if (!anim.named && anim.playing && IsWalkClip(anim.group, anim.animId))
+                {
+                    if (CConfigLoader::ms_bPlayerAnimDiag)
+                        ++it->second.sceneWalkFrames;
+                    const bool run = anim.animId == ANIM_DEFAULT_RUN_CIVI;
+                    ped->m_nMoveState = run ? PEDMOVE_RUN : PEDMOVE_WALK;
+                    ped->m_pPlayerData->m_fMoveBlendRatio = run ? 1.8f : 1.0f;
+                }
+                break;
+            }
+        }
+    }
+    ped->SetRealMoveAnim();
+}
 }  // namespace
+
+void CPlayerAnimMirror::Init()
+{
+    // GTA SA 1.0 US, CTaskSimplePlayerOnFoot::PlayerControlZelda -> CPlayerPed::SetRealMoveAnim.
+    const unsigned char call[] = {0xE8, 0x52, 0x23, 0xF8, 0xFF};
+    if (memcmp(reinterpret_cast<const void*>(0x688669), call, sizeof(call)) == 0)
+        patch::RedirectCall(0x688669, SetSceneMoveAnim);
+    else
+        CMissionMirror::LogEvent("scene-walk-sync: native animation call differs; hook disabled");
+}
 
 PACKET_HANDLER(ePacketType::PLAYER_ANIM_MIRROR, Packets::Players::PlayerAnimMirror* pAnimMirror)
 {

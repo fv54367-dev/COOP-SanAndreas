@@ -37,6 +37,22 @@ struct SMovingCopy
 };
 static std::unordered_map<uint32_t, SMovingCopy> ms_moving;
 constexpr uint32_t MOVING_QUIET_MS = 700;
+
+// object-state-smooth (owner's report 20-11: "las cajas y vagones se ven tepeándose en el invitado"): the mission scan
+// re-seats a copy with every packet (10 Hz), so a flying crate or one riding the train wagon appeared to jump. The copy
+// is now drawn from the position of the previous packet towards the new one.
+struct SInterp
+{
+    CVector fromPos{}, toPos{};
+    CVector fromRight{}, toRight{};
+    CVector fromForward{}, toForward{};
+    uint32_t fromTick = 0;
+    uint32_t span = 0;
+    uint32_t lastPacket = 0;
+    bool active = false;
+};
+static std::unordered_map<uint32_t, SInterp> ms_interp;
+
 // Catalyst (RYDER3) is running here (the synced copy of the host's mission)
 static bool IsCatalystRunning()
 {
@@ -73,6 +89,7 @@ static void RemoveAllCopies()
     ms_copies.clear();
     ms_brokenCopies.clear();
     ms_moving.clear();
+    ms_interp.clear();
 }
 
 uint32_t CObjectSync::GetNetworkId(int handle)
@@ -242,6 +259,74 @@ static bool LoadModel(int modelId)
     return CStreaming::ms_aInfoForModel[modelId].m_nLoadState == LOADSTATE_LOADED;
 }
 
+// object-state-smooth: a guest walks each mission-object copy from where it was drawn towards the last packet's position.
+// Copies moved by a guest himself (claimed), carried (Home Invasion) or attached to an entity are left alone: their own
+// code owns the transform.
+void CObjectSync::FrameUpdate()
+{
+    if (!CConfigLoader::ms_bObjectStateSmooth || !CNetwork::m_bAuthenticated || CCoopMission::IsScriptAuthority())
+        return;
+    if (ms_interp.empty())
+        return;
+
+    const uint32_t now = GetTickCount();
+    for (auto it = ms_interp.begin(); it != ms_interp.end();)
+    {
+        const auto copy = ms_copies.find(it->first);
+        CObject* object = copy != ms_copies.end() ? copy->second : nullptr;
+        if (object == nullptr || !object->IsVTableValid() || object->m_matrix == nullptr)
+        {
+            it = ms_interp.erase(it);
+            continue;
+        }
+
+        SInterp& interp = it->second;
+        if (!interp.active)
+        {
+            ++it;
+            continue;
+        }
+        if (CMissionObjectMoves::IsClaimed(it->first) || CHomeInvasion::IsCarried(it->first) ||
+            ms_brokenCopies.count(it->first) || object->m_pAttachedTo != nullptr)
+        {
+            interp.active = false;
+            ++it;
+            continue;
+        }
+
+        float t = interp.span > 0 ? (float)(now - interp.fromTick) / (float)interp.span : 1.0f;
+        if (t > 1.0f) t = 1.0f;
+        CVector pos = interp.fromPos + (interp.toPos - interp.fromPos) * t;
+        CVector right = interp.fromRight + (interp.toRight - interp.fromRight) * t;
+        CVector forward = interp.fromForward + (interp.toForward - interp.fromForward) * t;
+
+        // arriving far from where it is drawn is a teleport, not a movement to smooth
+        if ((pos - object->m_matrix->pos).Magnitude() > 10.0f)
+        {
+            pos = interp.toPos;
+            right = interp.toRight;
+            forward = interp.toForward;
+        }
+
+        if ((pos - object->m_matrix->pos).Magnitude() > 0.002f || t >= 1.0f)
+        {
+            CWorld::Remove(object);
+            object->m_matrix->right = right;
+            object->m_matrix->up = forward;
+            object->m_matrix->at = CVector(right.y * forward.z - right.z * forward.y,
+                right.z * forward.x - right.x * forward.z, right.x * forward.y - right.y * forward.x);
+            object->m_matrix->pos = pos;
+            object->UpdateRwMatrix();
+            object->UpdateRwFrame();
+            CWorld::Add(object);
+        }
+
+        if (t >= 1.0f)
+            interp.active = false;
+        ++it;
+    }
+}
+
 void CObjectSync::HandleSync(Packets::World::ObjectSync* pPacket)
 {
     if (CCoopMission::IsScriptAuthority())
@@ -307,6 +392,11 @@ void CObjectSync::HandleSync(Packets::World::ObjectSync* pPacket)
         pMatrix = pObject->m_matrix;
     }
 
+    // where the copy is drawn right now: the frame update walks it from here to the packet's transform
+    CVector prevPos = pMatrix != nullptr ? pMatrix->pos : pPacket->pos;
+    CVector prevRight = pMatrix != nullptr ? pMatrix->right : CVector(pPacket->right);
+    CVector prevForward = pMatrix != nullptr ? pMatrix->up : CVector(pPacket->forward);
+
     CVector right = pPacket->right;
     CVector forward = pPacket->forward;
     pMatrix->right = right;
@@ -314,6 +404,32 @@ void CObjectSync::HandleSync(Packets::World::ObjectSync* pPacket)
     pMatrix->at = CVector(right.y * forward.z - right.z * forward.y, right.z * forward.x - right.x * forward.z,
         right.x * forward.y - right.y * forward.x);
     pMatrix->pos = pPacket->pos;
+
+    // object-state-smooth: keep both ends and stay drawn where the copy was until the frame update walks it over
+    if (CConfigLoader::ms_bObjectStateSmooth && !created)
+    {
+        const uint32_t nowInterp = GetTickCount();
+        SInterp& interp = ms_interp[pPacket->objectid];
+        interp.fromPos = prevPos;
+        interp.fromRight = prevRight;
+        interp.fromForward = prevForward;
+        interp.toPos = pPacket->pos;
+        interp.toRight = right;
+        interp.toForward = forward;
+        interp.span = interp.lastPacket != 0 ? std::clamp<uint32_t>(nowInterp - interp.lastPacket, 40u, 250u) : 0u;
+        interp.fromTick = nowInterp;
+        interp.lastPacket = nowInterp;
+        interp.active = interp.span > 0;
+        if (interp.active)
+        {
+            pMatrix->right = prevRight;
+            pMatrix->up = prevForward;
+            pMatrix->at = CVector(prevRight.y * prevForward.z - prevRight.z * prevForward.y,
+                prevRight.z * prevForward.x - prevRight.x * prevForward.z,
+                prevRight.x * prevForward.y - prevRight.y * prevForward.x);
+            pMatrix->pos = prevPos;
+        }
+    }
 
     pObject->m_nAreaCode = pPacket->areaCode;
 
@@ -374,6 +490,7 @@ void CObjectSync::HandleRemove(Packets::World::ObjectRemove* pPacket)
 {
     ms_brokenCopies.erase(pPacket->objectid);
     ms_moving.erase(pPacket->objectid);
+    ms_interp.erase(pPacket->objectid);
 
     auto it = ms_copies.find(pPacket->objectid);
     if (it == ms_copies.end())
