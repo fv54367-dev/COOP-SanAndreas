@@ -969,7 +969,13 @@ void CInteriorObjectSync::ObserveNativeOpcode(CRunningScript* script, uint16_t o
         return;
     if (!script || script->m_bIsMission)
         return;
-    CPed* ped = CPools::GetPed(ScriptParams[0]);
+    // This observer runs before the handler: ScriptParams still belongs to the previous opcode.
+    const int pedHandle = script->CollectNextParameterWithoutIncreasingPC().iParam;
+
+    auto* pool = CPools::ms_pPedPool;
+    if (!pool || (static_cast<uint32_t>(pedHandle) >> 8) >= static_cast<uint32_t>(pool->m_nSize))
+        return;
+    CPed* ped = CPools::GetPed(pedHandle);
     if (!ped || !ped->IsVTableValid())
         return;
     if (guestInside && !ms_bOwnerInside)
